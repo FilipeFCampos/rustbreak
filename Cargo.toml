@@ -4,3 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+libtelnet-rs = "2.0"
+parking_lot = "0.12"
+uuid = { version = "1", features = ["v4"] }
+telnet = "0.2.4"
