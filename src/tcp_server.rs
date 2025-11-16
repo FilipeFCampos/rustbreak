@@ -1,13 +1,16 @@
 use std::{
-    io::{Read, Write},
+    io::Read,
     net::{TcpListener, TcpStream},
     sync::Arc,
     thread,
 };
 
-use parking_lot::Mutex;
-use crate::player::Player;
 use crate::player::Registry;
+use crate::{
+    player::Player,
+    utils::command_handler::{Action, ClientMessage, CommandError},
+};
+use parking_lot::Mutex;
 
 pub fn run_server(addr: &str) -> std::io::Result<()> {
     let listener = TcpListener::bind(addr)?;
@@ -48,10 +51,17 @@ fn handle_client(mut stream: TcpStream, registry: Arc<Mutex<Registry>>) {
             }
 
             Ok(n) => {
-                let msg = String::from_utf8_lossy(&buf[..n]).to_string();
-                println!("{} says: {}", peer, msg.trim());
+                let msg = ClientMessage {
+                    client_id: id,
+                    content: String::from_utf8_lossy(&buf[..n]).to_string(),
+                };
+                println!("{} says: {}", peer, msg.content.trim());
+                let answer = handle_messages(&msg);
+                if !answer.is_empty() {
+                    println!("Server says: {}", answer.trim())
+                };
 
-                registry.lock().broadcast(&msg);
+                registry.lock().broadcast(&answer);
             }
 
             Err(_) => {
@@ -60,5 +70,32 @@ fn handle_client(mut stream: TcpStream, registry: Arc<Mutex<Registry>>) {
                 return;
             }
         }
+    }
+}
+
+fn handle_messages(msg: &ClientMessage) -> String {
+    match msg.eval() {
+        Ok(action) => match action {
+            Action::Talk(answer) => answer,
+            _ => String::from("Action not implemented"),
+        },
+        Err(error) => match error {
+            CommandError::InvalidCommand => {
+                let answer = format!("Typed command doesn't exists");
+                println!(
+                    "ERROR: {answer}\n -> sender: {}\n -> message: {}",
+                    msg.client_id, msg.content
+                );
+                answer
+            }
+            CommandError::MissingArguments => {
+                let answer = format!("Typed command is missing arguments");
+                println!(
+                    "ERROR: {answer}\n -> sender: {}\n -> message: {}",
+                    msg.client_id, msg.content
+                );
+                answer
+            }
+        },
     }
 }

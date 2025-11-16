@@ -8,3 +8,4 @@ libtelnet-rs = "2.0"
 parking_lot = "0.12"
 uuid = { version = "1", features = ["v4"] }
 telnet = "0.2.4"
+nanoid = "0.4.0"

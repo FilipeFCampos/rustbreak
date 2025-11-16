@@ -1,4 +1,4 @@
-use rustbreak::telnet_client::{connect, send_message, read_message};
+use rustbreak::telnet_client::{connect, read_message, send_message};
 use std::io::{self, Write};
 
 fn main() {
