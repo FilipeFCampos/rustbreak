@@ -4,7 +4,7 @@ use std::io::{self, Write};
 fn main() {
     let mut tel = connect("127.0.0.1:6000");
 
-    println!("Connected! Type messages:");
+    println!("Connected! Type messages (use /exit to quit):");
 
     loop {
         print!("> ");
@@ -13,7 +13,13 @@ fn main() {
         let mut input = String::new();
         io::stdin().read_line(&mut input).unwrap();
 
-        send_message(&mut tel, &input);
+        let trimmed = input.trim();
+        if trimmed == "/exit" {
+            println!("Exiting client...");
+            break;
+        }
+
+        send_message(&mut tel, trimmed);
 
         if let Some(resp) = read_message(&mut tel) {
             println!("[server] {resp}");
