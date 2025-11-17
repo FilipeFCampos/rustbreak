@@ -11,7 +11,13 @@ pub fn send_message(client: &mut Telnet, msg: &str) {
 
 pub fn read_message(client: &mut Telnet) -> Option<String> {
     match client.read() {
-        Ok(event) => Some(format!("{:?}", event)),
+        Ok(event) => match event {
+            telnet::Event::Data(data) => {
+                let msg = String::from_utf8_lossy(&data[..]);
+                Some(format!("{}", msg.trim()))
+            }
+            _ => None,
+        },
         Err(_) => None,
     }
 }
