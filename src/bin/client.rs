@@ -4,11 +4,12 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-const ADDRESS: &str = "127.0.0.1:6000"; 
+const ADDRESS: &str = "127.0.0.1:6000";
 
 fn main() {
-    let mut telnet = connect(ADDRESS);
+    let mut tel = connect(ADDRESS);
 
+    let (sender, receiver) = mpsc::channel::<String>();
     println!("Connected! Type messages (use /exit to quit):");
 
     // Thread for handling user input
@@ -21,22 +22,24 @@ fn main() {
             let mut input = String::new();
             io::stdin().read_line(&mut input).unwrap();
 
-        let trimmed = input.trim();
-        if trimmed == "/exit" {
-            println!("Exiting client...");
-            break;
-        }
+            let trimmed = input.trim();
+            if trimmed == "/exit" {
+                println!("Exiting client...");
+                std::process::exit(0);
+            }
 
-        send_message(&mut tel, trimmed);
+            sender.send(trimmed.to_string()).unwrap();
+        }
+    });
 
     loop {
         // Handles message from the `input thread`
         if let Ok(msg) = receiver.try_recv() {
-            send_message(&mut telnet, &msg);
+            send_message(&mut tel, &msg);
         }
 
         // Handles server messages (non-blocking)
-        if let Some(resp) = read_message(&mut telnet) {
+        if let Some(resp) = read_message(&mut tel) {
             // TODO: Make this print the `user_id` from the client who sent the message
             println!("[server] {resp}")
         };

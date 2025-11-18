@@ -1,6 +1,6 @@
+use parking_lot::Mutex;
 use std::io::Write;
 use std::net::TcpStream;
-use parking_lot::Mutex;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -25,7 +25,9 @@ pub struct Registry {
 
 impl Registry {
     pub fn new() -> Self {
-        Self { players: Vec::new() }
+        Self {
+            players: Vec::new(),
+        }
     }
 
     pub fn add(&mut self, player: Player) -> Uuid {

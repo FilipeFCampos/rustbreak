@@ -5,9 +5,9 @@ use std::{
     thread,
 };
 
-use parking_lot::Mutex;
 use crate::player::Player;
 use crate::player::Registry;
+use parking_lot::Mutex;
 
 pub fn run_server(addr: &str) -> std::io::Result<()> {
     let listener = TcpListener::bind(addr)?;
