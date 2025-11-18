@@ -9,8 +9,7 @@ const ADDRESS: &str = "127.0.0.1:6000";
 fn main() {
     let mut telnet = connect(ADDRESS);
 
-    let (sender, receiver) = mpsc::channel::<String>();
-    println!("Connected! Type messages:");
+    println!("Connected! Type messages (use /exit to quit):");
 
     // Thread for handling user input
     thread::spawn(move || {
@@ -22,9 +21,13 @@ fn main() {
             let mut input = String::new();
             io::stdin().read_line(&mut input).unwrap();
 
-            sender.send(input).unwrap();
+        let trimmed = input.trim();
+        if trimmed == "/exit" {
+            println!("Exiting client...");
+            break;
         }
-    });
+
+        send_message(&mut tel, trimmed);
 
     loop {
         // Handles message from the `input thread`
