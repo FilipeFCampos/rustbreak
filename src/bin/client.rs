@@ -73,10 +73,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
         }
+
+        // The connection dropped, so let’s notify the graphical interface (Cursive) to close.
+        let _ = sink.send(Box::new(|siv: &mut Cursive| {
+            siv.quit();
+        }));
     });
 
-    siv.run();
-    let _ = writer_clone.lock().await.shutdown().await;
+    siv.run(); let _ = writer_clone.lock().await.shutdown().await;
 
     Ok(())
 }
