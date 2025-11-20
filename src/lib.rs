@@ -1,4 +1,3 @@
-pub mod tcp_server;
-pub mod telnet_client;
-pub mod player;
-pub mod client;
+pub mod common;
+pub mod frontend;
+pub mod game;
