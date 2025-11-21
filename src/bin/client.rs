@@ -1,6 +1,6 @@
 use cursive::{
     Cursive,
-    views::{EditView, TextView},
+    views::{EditView, ScrollView, TextView, NamedView},
 };
 use rustbreak::common::{
     formatting::*,
@@ -65,6 +65,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     .send(Box::new(move |siv: &mut Cursive| {
                         siv.call_on_name("messages", |view: &mut TextView| {
                             view.append(formatted_msg);
+                        });
+
+                        // Appends the message and forces the view to scroll down to the latest entry
+                        siv.call_on_name("chat_scroll", |view: &mut ScrollView<NamedView<TextView>>| {
+                            view.scroll_to_bottom();
                         });
                     }))
                     .is_err()

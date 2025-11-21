@@ -21,13 +21,15 @@ pub fn handle_tui(siv: &mut Cursive, username: String, input_action: fn(&mut Cur
 
     // Message area
     let messages = TextView::new("")
-        .with_name("messages")
-        .min_height(20)
-        .scrollable();
+        .with_name("messages");
+        // No need, the ScrollView below already does all the work -> .scrollable();
 
     // TODO: For some unknown reason the scroll is not sticking to the bottom. Fix it.
     let messages = ScrollView::new(messages)
         .scroll_strategy(cursive::view::ScrollStrategy::StickToBottom)
+        .with_name("chat_scroll")
+        .min_height(10)
+        .full_height()
         .min_width(60)
         .full_width();
 
