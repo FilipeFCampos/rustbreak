@@ -1,6 +1,6 @@
 use cursive::{
     Cursive,
-    views::{EditView, ScrollView, TextView, NamedView},
+    views::{EditView, NamedView, ScrollView, TextView},
 };
 use rustbreak::common::{
     formatting::*,
@@ -22,7 +22,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     ));
 
     let mut siv = cursive::default();
-    siv.set_theme(tui::create_theme());
 
     // Handles TUI
     tui::handle_tui(&mut siv, username.clone(), send_message);
@@ -68,9 +67,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         });
 
                         // Appends the message and forces the view to scroll down to the latest entry
-                        siv.call_on_name("chat_scroll", |view: &mut ScrollView<NamedView<TextView>>| {
-                            view.scroll_to_bottom();
-                        });
+                        siv.call_on_name(
+                            "chat_scroll",
+                            |view: &mut ScrollView<NamedView<TextView>>| {
+                                view.scroll_to_bottom();
+                            },
+                        );
                     }))
                     .is_err()
                 {
@@ -85,7 +87,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }));
     });
 
-    siv.run(); let _ = writer_clone.lock().await.shutdown().await;
+    siv.run();
+    let _ = writer_clone.lock().await.shutdown().await;
 
     Ok(())
 }

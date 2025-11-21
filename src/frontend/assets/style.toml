@@ -1,0 +1,14 @@
+# The TUI style configuration file
+
+shadow = true
+borders = "simple"
+
+[colors]
+    background = "#000014"
+    view = "#000000"
+    primary = "#0a24cf"
+    title_primary = "#006bbd"
+    secondary = "yellow"
+    highlight = "#0080ff"
+    highlight_inactive = "#404040"
+    shadow = "#000028"
