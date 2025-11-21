@@ -2,7 +2,7 @@ use cursive::{
     Cursive,
     align::HAlign,
     event::Key,
-    theme::{BaseColor, BorderStyle, Color, Palette, PaletteColor, Theme},
+    theme::{BaseColor, Color, PaletteColor},
     traits::*,
     views::{Dialog, DummyView, EditView, LinearLayout, Panel, ScrollView, TextView},
 };
@@ -14,17 +14,19 @@ use cursive::{
 /// - `username`: The username of the current client;
 /// - `input_action`: Function to be run on input box submission.
 pub fn handle_tui(siv: &mut Cursive, username: String, input_action: fn(&mut Cursive, String)) {
+    // Load theme from file
+    siv.load_toml(include_str!("assets/style.toml")).unwrap();
+
     // Header to be displayed at the top
     let header = TextView::new(format!(r#"⋘ ( *^-^)ρ ⭐ WELCOME {username} ⭐ &(^0^* )⋙"#))
-        .style(Color::Dark(BaseColor::Yellow))
+        .style(PaletteColor::Secondary)
         .h_align(HAlign::Center);
 
     // Message area
     let messages = TextView::new("")
+        .style(PaletteColor::Secondary)
         .with_name("messages");
-        // No need, the ScrollView below already does all the work -> .scrollable();
 
-    // TODO: For some unknown reason the scroll is not sticking to the bottom. Fix it.
     let messages = ScrollView::new(messages)
         .scroll_strategy(cursive::view::ScrollStrategy::StickToBottom)
         .with_name("chat_scroll")
@@ -75,24 +77,4 @@ pub fn handle_tui(siv: &mut Cursive, username: String, input_action: fn(&mut Cur
             view.set_content("/");
         });
     });
-}
-
-/// Creates a personalized theme for the TUI and returns it.
-pub fn create_theme() -> Theme {
-    let mut theme = Theme::default();
-    theme.shadow = true;
-    theme.borders = BorderStyle::Simple;
-
-    let mut palette = Palette::default();
-    palette[PaletteColor::Background] = Color::Rgb(0, 0, 20);
-    palette[PaletteColor::View] = Color::Rgb(0, 0, 0);
-    palette[PaletteColor::Primary] = Color::Rgb(10, 36, 207);
-    palette[PaletteColor::TitlePrimary] = Color::Rgb(0, 107, 189);
-    palette[PaletteColor::Secondary] = Color::Dark(BaseColor::Yellow);
-    palette[PaletteColor::Highlight] = Color::Rgb(0, 128, 255);
-    palette[PaletteColor::HighlightInactive] = Color::Rgb(64, 64, 64);
-    palette[PaletteColor::Shadow] = Color::Rgb(0, 0, 40);
-    theme.palette = palette;
-
-    theme
 }
