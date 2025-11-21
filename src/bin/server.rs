@@ -106,6 +106,9 @@ async fn handle_connection(
             let error_msg_json = serde_json::to_string(&error_msg).unwrap();
             writer.write_all(error_msg_json.as_bytes()).await.unwrap();
             writer.write_all(b"\n").await.unwrap();
+
+            // End the function here
+            return;
         }
     }
     drop(registry_locked);
