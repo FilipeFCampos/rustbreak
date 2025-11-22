@@ -24,9 +24,16 @@ pub struct ChatMessage {
 pub enum MessageType {
     UserMessage,
     SystemNotification,
-    // Signal(EventSignal),
 }
 
-// TODO: Implement enum (EventSignal) to serve as a way of sending signals
-// from the server to a specific client e.g. signal to 'kick' that player
-// or cause 'damage'.
+/// Represents different event signals that can be sent from the server to the client.
+///
+/// Each variant carries a `String` payload to provide additional context about the event.
+/// ### Types
+/// - `Error(String)`: An error event with associated data;
+/// - `Ok(String)`: A success event with associated data.
+#[derive(Serialize, Deserialize)]
+pub enum EventSignal {
+    Error(String),
+    Ok(String),
+}
