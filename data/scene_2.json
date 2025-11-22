@@ -1,0 +1,14 @@
+{
+	"id": 2,
+	"description": "Vocês entram na sala B203 e dão de cara com uma briga. O Professor de PLE e o Professor de ME gritam um com o outro. 'Meu texto é mais importante!' 'Meus gráficos são cruciais!'. O projetor está soltando fumaça, piscando uma mensagem de erro no terminal: expected struct `AulaDeHumanas`, found struct `AulaDeExatas`. Vocês olham para o terminal e pensam, 'o que pode estar causando isso?'",
+	"code": "struct AulaDeHumanas {\n    texto_principal: String,\n}\nstruct AulaDeExatas {\n    grafico_complexo: Vec<(f32, f32)>,\n}\n\nfn projetar_aula(material: AulaDeHumanas) {\n    println!('Exibindo texto: {}', material.texto_principal);\n}\n\nfn main() {\n    let aula_ple = AulaDeHumanas {\n        texto_principal: 'O texto dissertativo argumentativo...'.to_string()\n    };\n    let aula_me = AulaDeExatas {\n        grafico_complexo: vec![(0.1, 0.2), (0.3, 0.4)]\n    };\n\n    projetar_aula(aula_ple);\n    projetar_aula(aula_me);\n}",
+	"options": {
+		"a": "O erro acontece porque a AulaDeExatas usa um Vec, que é um tipo de dado muito complexo para o projetor processar.",
+		"b": "O projetor não consegue compilar pois falta uma abstração (como uma Trait) para lidar com tipos diferentes.",
+		"c": "O problema está na função main, que não pode declarar duas structs diferentes (AulaDeHumanas e AulaDeExatas) no mesmo escopo.",
+		"d": "A variável aula_calc deveria ter sido declarada como mut (mut aula_calc) para que a função projetar_aula pudesse acessá-la.",
+		"id_correct": "b"
+	},
+	"success_msg": "Exato! O projetor foi programado de forma 'rígida', aceitando apenas um tipo específico. A solução correta em Rust é criar uma Trait, como Projetavel, e fazer com que AulaDeHumanas e AulaDeExatas a implementem. O projetor então aceitaria qualquer tipo genérico que implemente essa trait. Após ajustarem o código, os professores se acalmam e ficam tão empolgados que decidem dar uma aula juntos, combinando duas áreas completamente distintas. Vocês saem da sala e seguem para o próximo desafio.",
+	"error_msg": "Vocês tentam a mudança, mas o projetor apita mais alto e a fumaça aumenta. O professor de PLE olha para vocês e diz: 'Ótimo, agora não funciona nem a minha aula!'. Os dois professores saem da sala bufando, e vocês ficam sozinhos com o projetor quebrado lamentando o erro..."
+}

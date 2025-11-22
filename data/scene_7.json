@@ -1,0 +1,14 @@
+{
+	"id": 7,
+	"description": "Vocês chegam na Biblioteca Central (BCZM). O silêncio é assustador. Alunos choramingam nos cantos, com medo dos 'fantasmas que estão fazendo livros desaparecerem'. Um estudante corajoso vai até a estante, pega o 'Livro de Cálculo' e, assim que o abre, o livro se desfaz em pó digital. A estante agora está vazia. O estudante grita: 'É a segunda vez essa semana! O livro sumiu!'. É impossível dizer se estão com medo dos fantasmas ou do fato das provas estarem chegando e eles não terem os livros para estudar. Vocês olham o código que gerencia o acervo.",
+	"code": "struct Livro {\n    titulo: String,\n    conteudo: String,\n}\n\nfn ler_livro(livro: Livro) {\n    println!(\"Lendo o livro: {}\", livro.titulo);\n}\n\nfn main() {\n    let livro_de_calculo = Livro {\n        titulo: \"Cálculo I\".to_string(),\n        conteudo: \"Limites, Derivadas...\".to_string(),\n    };\n\n    // O primeiro estudante lê o livro\n    ler_livro(livro_de_calculo);\n\n    // O segundo estudante tenta ler o mesmo livro\n    println!(\"Minha vez de ler: {}\", livro_de_calculo.titulo);\n}",
+	"options": {
+		"a": "O struct Livro não pode ser impresso com println!, pois falta implementar a trait Display.",
+		"b": "O código tenta usar livro_de_calculo após ele ter sido movido para a função ler_livro.",
+		"c": "A função main não pode conter uma struct e uma função ao mesmo tempo; a struct Livro deveria estar em outro arquivo.",
+		"d": "A variável livro_de_calculo foi 'dropada' (destruída) imediatamente após sua criação por ser muito grande para o stack.",
+		"id_correct": "b"
+	},
+	"success_msg": "Isso! O 'fantasma' era o sistema de Ownership (posse) do Rust! A função ler_livro estava tomando a posse total do livro. Ao invés de mover o valor (livro: Livro), a função deveria apenas emprestar o livro (livro: &Livro). Assim, a main continuaria sendo a dona e o livro permaneceria na estante (no escopo) para o próximo aluno.",
+	"error_msg": "Não foi bem isso. Ao tentar aplicar a correção, o compilador grita uma mensagem de erro ainda mais assustadora. Os livros restantes na estante começam a vibrar e um deles voa na direção de vocês! Vocês desviam por pouco e saem correndo da BCZM, enquanto os outros alunos gritam 'Os fantasmas estão bravos! Fujam!'."
+}

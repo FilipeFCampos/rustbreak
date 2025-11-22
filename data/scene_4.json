@@ -1,0 +1,14 @@
+{
+	"id": 4,
+	"description": "Vocês chegam ao RU e descobrem que ele SUMIU! No lugar, tem um carangueijo gigante berrando 'Empréstimo errado!', e uma fila de pessoas famintas na entrada. Elas já estão começando a cogitar comer o caranguejo… Vocês olham para o terminal e pensam, 'o que pode estar causando isso?'",
+	"code": "fn abrir_ru() {\n  let mut ru = pegar_ru();\n\n  let entrada1 = &mut ru;\n  let entrada2 = &mut ru;\n\n  println!(\"Entradas liberadas: {} {}\", entrada1.numero, entrada2.numero);\n}",
+	"options": {
+		"a": "O tipo 'numero' de 'entrada1' e 'entrada2' não implementa a trait 'Debug'",
+		"b": "Erro de empréstimo, não pode haver dois empréstimos mutáveis para uma mesma variável vivendo simultaneamente",
+		"c": "Erro de empréstimo, não pode existir um empréstimo mutável para uma variável mutável",
+		"d": "O operador '&' é inválido no contexto de empréstimos.",
+		"id_correct": "b"
+	},
+	"success_msg": "Em Rust não é permitido dois empréstimos mutáveis para a mesma variável, pois isso ocasionaria uma corrida de dados! Vocês retiram a 2ª referência mutável e, ao mesmo tempo, o caranguejo desaparece e dá lugar novamente ao RU! Os estudantes comemoram, com exceção dos que já estavam ansiosos para devorar o pobre caranguejo…",
+	"error_msg": "Vocês não conseguem consertar o problema e as pessoas estão se aproximando cada vez mais do pobre caranguejo… vocês torcem para que alguém com mais experiência possa salvá-lo desse destino."
+}
