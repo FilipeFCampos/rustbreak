@@ -104,6 +104,7 @@ fn set_username(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
     let input = EditView::new()
         .on_submit(move |s, text| input_action(s, text.to_string()))
         .style(PaletteColor::Secondary)
+        .max_content_width(20)
         .with_name("input");
 
     let message = TextView::new("Please type your username below.").with_name("message");
