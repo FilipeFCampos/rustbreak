@@ -112,7 +112,7 @@ async fn handle_connection(
                 }
                 Err(e) => {
                     eprintln!(
-                        "├─[{}] {RED}ERROR: Unexpected IO error from {}: {}",
+                        "├─[{}] {RED}ERROR: Unexpected IO error from {}: {}{RESET}",
                         get_time(),
                         addr,
                         e
