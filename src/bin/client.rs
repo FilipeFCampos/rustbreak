@@ -2,13 +2,13 @@ use cursive::{
     Cursive,
     views::{EditView, NamedView, ScrollView, TextView},
 };
-use rustbreak::common::{
+use rustbreak::{common::{
     formatting::*,
-    messages::{ChatMessage, MessageType},
+    messages::{ChatMessage, EventSignal, MessageType},
     shared::*,
-};
+}, frontend::tui::make_header};
 use rustbreak::frontend::tui;
-use std::{env, error::Error, sync::Arc};
+use std::{error::Error, sync::Arc};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{TcpStream, tcp::OwnedWriteHalf},
@@ -17,14 +17,14 @@ use tokio::{
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let username = env::args().nth(1).expect(&format!(
-        "{RED}Please provide a username as argument.{RESET}"
-    ));
-
+    // Initialize Cursive TUI and load theme
     let mut siv = cursive::default();
+    siv.load_toml(include_str!("../frontend/assets/style.toml"))
+        .unwrap();
 
-    // Handles TUI
-    tui::handle_tui(&mut siv, username.clone(), send_message);
+    // Builds TUI structure as layer stack
+    // Please read the documentation before adding new layers
+    tui::build_tui(&mut siv, send_message);
 
     // Handle connecting with the server
     let stream = TcpStream::connect(format!("{ADDRESS}:{PORT}"))
@@ -33,8 +33,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             "{RED}ERROR: Unable to connect to server. Maybe the server is offline?\n{RESET}details"
         ));
 
-    let (reader, mut writer) = stream.into_split();
-    writer.write_all(format!("{username}\n").as_bytes()).await?;
+    let (reader, writer) = stream.into_split();
 
     let writer = Arc::new(Mutex::new(writer));
     let writer_clone = Arc::clone(&writer);
@@ -77,6 +76,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     .is_err()
                 {
                     break;
+                }
+
+            // P.s. the next 20 lines of code were incredibly painful to come up with
+            // Please remember to take a break and drink some water!
+            // Because I did not.
+            } else if let Ok(signal) = serde_json::from_str::<EventSignal>(&line) {
+                match signal {
+                    EventSignal::Error(_) => {
+                        let _ = sink.send(Box::new(move |siv: &mut Cursive| {
+                            tui::error_popup(siv, "Username already taken.");
+                        }));
+                    }
+                    EventSignal::Ok(name) => sink
+                        .send(Box::new(move |siv: &mut Cursive| {
+                            siv.pop_layer();
+                            siv.pop_layer();
+                            siv.call_on_name("header", |view: &mut TextView| {
+                                view.set_content(make_header(name));
+                            });
+                        }))
+                        .unwrap(),
                 }
             }
         }
