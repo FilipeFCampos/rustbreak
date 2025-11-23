@@ -7,6 +7,9 @@ use cursive::{
     views::{Dialog, DummyView, EditView, LinearLayout, Panel, ScrollView, TextView},
 };
 
+use crate::client::add_scroll_callbacks;
+
+// ... restante do código
 /// Builds the entire TUI by calling the necessary setup functions.
 /// 
 /// ## Why use this?
@@ -24,6 +27,7 @@ use cursive::{
 pub fn build_tui(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
     handle_chat(siv, input_action);
     set_username(siv, input_action);
+    add_scroll_callbacks(siv);
 }
 
 /// Handles the chat setup.
