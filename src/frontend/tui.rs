@@ -1,7 +1,7 @@
 use cursive::{
     Cursive,
     align::HAlign,
-    event::Key,
+    event::{Event, Key},
     theme::{BaseColor, Color, PaletteColor},
     traits::*,
     views::{Dialog, DummyView, EditView, LinearLayout, Panel, ScrollView, TextView},
@@ -98,7 +98,7 @@ fn handle_chat(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
         });
     });
 
-    siv.add_global_callback(cursive::event::Event::Unknown(vec![127]), |s| {
+    siv.add_global_callback(Event::Unknown(vec![127]), |s| {
         s.call_on_name("input", |view: &mut EditView| {
             let mut content = view.get_content().to_string();
             content.pop();
@@ -106,7 +106,7 @@ fn handle_chat(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
         });
     });
 
-    siv.add_global_callback(cursive::event::Event::Unknown(vec![8]), |s| {
+    siv.add_global_callback(Event::Unknown(vec![8]), |s| {
         s.call_on_name("input", |view: &mut EditView| {
             let mut content = view.get_content().to_string();
             let mut chars = content.chars();
@@ -115,7 +115,7 @@ fn handle_chat(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
         });
     }); 
 
-    siv.add_global_callback(cursive::event::Event::CtrlChar('u'), |s| {
+    siv.add_global_callback(Event::CtrlChar('u'), |s| {
         s.call_on_name("input", |view: &mut EditView| {
             view.set_content("");
         });
