@@ -81,7 +81,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             if let Some(client_data) = siv.user_data::<ClientData>() {
                                 client_data.scroll_state.auto_scroll
                             } else {
-                                true // Por padrão, scroll automático
+                                true
                             }
                         };
 
