@@ -1,7 +1,7 @@
 use chrono::Local;
 use rustbreak::common::{
     formatting::*,
-    messages::{ChatMessage, MessageType},
+    messages::{ChatMessage, EventSignal, MessageType},
     shared::*,
 };
 use rustbreak::game::player::{Player, Registry};
@@ -39,9 +39,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         let registry_clone = Arc::clone(&registry);
         // Spawn a thread for handling each user's connection
-        tokio::spawn(
-            async move { handle_connection(socket, receiver, sender, registry_clone).await },
-        );
+        tokio::spawn(async move {
+            handle_connection(socket, receiver, sender, registry_clone, addr).await
+        });
     }
 }
 
@@ -70,9 +70,8 @@ async fn handle_connection(
     mut receiver: broadcast::Receiver<String>,
     sender: broadcast::Sender<String>,
     registry: Arc<Mutex<Registry>>,
+    addr: core::net::SocketAddr,
 ) {
-    // TODO: Find a way to create a direct message channel between the server and each client.
-
     // Split socket into reader and writer
     let (reader, mut writer) = socket.split();
     let mut reader = BufReader::new(reader);
@@ -84,45 +83,78 @@ async fn handle_connection(
     ));
     let username = username.trim().to_string();
 
+    // This flag is a horrendous programming practice but it will do for now
+    // TODO: Find a better way to handle this
+    let mut error_carry = false;
+
     // Add new player to registry
-    //// WORK IN PROGRESS
     let player = Player::new(username.clone());
     let mut registry_locked = registry.lock().await;
     match registry_locked.add(player) {
-        None => {}
-        Some(_) => {
-            eprintln!("{RED}ERROR: Username [{}] already exists.{RESET}", username);
-            // Send "this username is already taken" message
-            // All this might change so take it with a grain of salt
-            let error_msg = ChatMessage {
+        None => {
+            let ok_signal = EventSignal::Ok(username.clone());
+            let ok_signal = serde_json::to_string(&ok_signal).unwrap();
+            writer.write_all(ok_signal.as_bytes()).await.unwrap();
+            // This usually fails if the client aborts the connection during the username screen
+            // In that case, we just want to prematurely end this function
+            // If there is any other error, we want to log it
+            match writer.write_all(b"\n").await {
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {
+                    eprintln!(
+                        "├─[{}] {YELLOW}{} aborted the connection.{RESET}",
+                        get_time(),
+                        addr
+                    );
+                    registry_locked.remove(username.clone());
+                    drop(registry_locked);
+                    return;
+                }
+                Err(e) => {
+                    eprintln!(
+                        "├─[{}] {RED}ERROR: Unexpected IO error from {}: {}{RESET}",
+                        get_time(),
+                        addr,
+                        e
+                    );
+                    registry_locked.remove(username.clone());
+                    drop(registry_locked);
+                    return;
+                }
+            }
+            // Send join message
+            let join_msg = ChatMessage {
                 username: username.clone(),
-                content: format!(
-                    "ERROR: Username [{}] already exists. Please pick another one.",
-                    username
-                ),
+                content: "joined the chat!".to_string(),
                 timestamp: get_time(),
                 message_type: MessageType::SystemNotification,
             };
-            let error_msg_json = serde_json::to_string(&error_msg).unwrap();
-            writer.write_all(error_msg_json.as_bytes()).await.unwrap();
+            println!(
+                "├─[{}] {GREEN}'{}' joined the chat!{RESET}",
+                join_msg.timestamp, username
+            );
+            let join_msg_json = serde_json::to_string(&join_msg).unwrap();
+            sender.send(join_msg_json).unwrap();
+        }
+        Some(_) => {
+            let error_msg = format!(
+                "┌─[{}] {BLUE}{}{RESET}\n└─ {RED}ERROR: Username [{}] is already in use.{RESET}",
+                get_time(),
+                addr,
+                username
+            );
+            eprintln!("{}", error_msg);
+            // Send "this username is already taken" message
+            // All this might change so take it with a grain of salt
+            let error_signal = EventSignal::Error(error_msg);
+            let error_signal = serde_json::to_string(&error_signal).unwrap();
+            writer.write_all(error_signal.as_bytes()).await.unwrap();
             writer.write_all(b"\n").await.unwrap();
 
-            // End the function here
-            return;
+            error_carry = true;
         }
     }
     drop(registry_locked);
-    //// WORK IN PROGRESS ENDS HERE
-
-    // Send join message
-    let join_msg = ChatMessage {
-        username: username.clone(),
-        content: "joined the chat!".to_string(),
-        timestamp: get_time(),
-        message_type: MessageType::SystemNotification,
-    };
-    let join_msg_json = serde_json::to_string(&join_msg).unwrap();
-    sender.send(join_msg_json).unwrap();
 
     let mut line = String::new();
     loop {
@@ -156,6 +188,9 @@ async fn handle_connection(
     }
 
     // Removes the current player from the registry
+    if error_carry {
+        return;
+    }
     let mut registry_locked = registry.lock().await;
     let _ = registry_locked.remove(username.clone());
     drop(registry_locked);
@@ -169,10 +204,15 @@ async fn handle_connection(
     };
 
     println!(
-        "├─[{}] {RED}{} disconnected.{RESET}",
+        "├─[{}] {YELLOW}'{}' disconnected.{RESET}",
         leave_msg.timestamp, username
     );
 
     let leave_msg_json = serde_json::to_string(&leave_msg).unwrap();
     sender.send(leave_msg_json).unwrap();
+}
+
+// TODO: Move 'add new player to registry' code here
+fn new_player_handler() {
+    todo!()
 }

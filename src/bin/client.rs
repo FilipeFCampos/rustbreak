@@ -2,44 +2,55 @@ use cursive::{
     Cursive,
     views::{EditView, NamedView, ScrollView, TextView},
 };
-use rustbreak::common::{
-    formatting::*,
-    messages::{ChatMessage, MessageType},
-    shared::*,
+use rustbreak::{
+    common::{
+        formatting::*,
+        messages::{ChatMessage, EventSignal, MessageType},
+        shared::*,
+    },
+    frontend::tui::make_header,
+    client::{ScrollState, add_scroll_callbacks, scroll_to_bottom, check_scroll_position, enable_auto_scroll}
 };
 use rustbreak::frontend::tui;
-use std::{env, error::Error, sync::Arc};
+use std::{error::Error, sync::Arc};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{TcpStream, tcp::OwnedWriteHalf},
     sync::Mutex,
 };
 
+struct ClientData {
+    scroll_state: ScrollState,
+    writer: Arc<Mutex<OwnedWriteHalf>>,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let username = env::args().nth(1).expect(&format!(
-        "{RED}Please provide a username as argument.{RESET}"
-    ));
-
+    // Initialize Cursive TUI and load theme
     let mut siv = cursive::default();
+    siv.load_toml(include_str!("../frontend/assets/style.toml"))
+        .unwrap();
 
-    // Handles TUI
-    tui::handle_tui(&mut siv, username.clone(), send_message);
-
-    // Handle connecting with the server
     let stream = TcpStream::connect(format!("{ADDRESS}:{PORT}"))
         .await
         .expect(&format!(
             "{RED}ERROR: Unable to connect to server. Maybe the server is offline?\n{RESET}details"
         ));
 
-    let (reader, mut writer) = stream.into_split();
-    writer.write_all(format!("{username}\n").as_bytes()).await?;
-
+    let (reader, writer) = stream.into_split();
     let writer = Arc::new(Mutex::new(writer));
-    let writer_clone = Arc::clone(&writer);
 
-    siv.set_user_data(writer);
+    siv.set_user_data(ClientData {
+        scroll_state: ScrollState::new(),
+        writer: Arc::clone(&writer),
+    });
+
+    // Builds TUI structure as layer stack
+    // Please read the documentation before adding new layers
+    tui::build_tui(&mut siv, send_message);
+
+    add_scroll_callbacks(&mut siv);
+
     let reader = BufReader::new(reader);
     let mut lines = reader.lines();
     let sink = siv.cb_sink().clone();
@@ -58,7 +69,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         format!("\n[{}: {}]\n", msg.username, msg.content)
                     }
                 };
-
+                
                 // This writes the message in the chat
                 if sink
                     .send(Box::new(move |siv: &mut Cursive| {
@@ -66,17 +77,41 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             view.append(formatted_msg);
                         });
 
-                        // Appends the message and forces the view to scroll down to the latest entry
-                        siv.call_on_name(
-                            "chat_scroll",
-                            |view: &mut ScrollView<NamedView<TextView>>| {
-                                view.scroll_to_bottom();
-                            },
-                        );
+                        let should_scroll = {
+                            if let Some(client_data) = siv.user_data::<ClientData>() {
+                                client_data.scroll_state.auto_scroll
+                            } else {
+                                true // Por padrão, scroll automático
+                            }
+                        };
+
+                        if should_scroll {
+                            scroll_to_bottom(siv);
+                        }
                     }))
                     .is_err()
                 {
                     break;
+                }
+            // P.s. the next 20 lines of code were incredibly painful to come up with
+            // Please remember to take a break and drink some water!
+            // Because I did not.
+            } else if let Ok(signal) = serde_json::from_str::<EventSignal>(&line) {
+                match signal {
+                    EventSignal::Error(_) => {
+                        let _ = sink.send(Box::new(move |siv: &mut Cursive| {
+                            tui::error_popup(siv, "Username already taken.");
+                        }));
+                    }
+                    EventSignal::Ok(name) => sink
+                        .send(Box::new(move |siv: &mut Cursive| {
+                            siv.pop_layer();
+                            siv.pop_layer();
+                            siv.call_on_name("header", |view: &mut TextView| {
+                                view.set_content(make_header(name));
+                            });
+                        }))
+                        .unwrap(),
                 }
             }
         }
@@ -88,7 +123,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     });
 
     siv.run();
-    let _ = writer_clone.lock().await.shutdown().await;
+    let _ = writer.lock().await.shutdown().await;
 
     Ok(())
 }
@@ -110,7 +145,9 @@ fn send_message(siv: &mut Cursive, msg: String) {
                     "\n=== Commands ===\n
                     /help - Show this message\n
                     /clear - Clear messages\n
-                    /quit - Exit chat\n\n",
+                    /quit - Exit chat\n
+                    /scrollon - Enable auto-scroll\n
+                    /scrolloff - Disable auto-scroll\n\n",
                 );
             });
             siv.call_on_name("input", |view: &mut EditView| {
@@ -125,6 +162,30 @@ fn send_message(siv: &mut Cursive, msg: String) {
             siv.call_on_name("input", |view: &mut EditView| {
                 view.set_content("");
             });
+
+            if let Some(client_data) = siv.user_data::<ClientData>() {
+                client_data.scroll_state.auto_scroll = true;
+            }
+            return;
+        }
+        "/scrollon" => {
+            enable_auto_scroll(siv);
+            siv.call_on_name("messages", |view: &mut TextView| {
+                view.append("\n[Auto-scroll enabled]\n");
+            });
+            siv.call_on_name("input", |view: &mut EditView| {
+                view.set_content("");
+            });
+            return;
+        }
+        "/scrolloff" => {
+            check_scroll_position(siv); 
+            siv.call_on_name("messages", |view: &mut TextView| {
+                view.append("\n[Auto-scroll disabled]\n");
+            });
+            siv.call_on_name("input", |view: &mut EditView| {
+                view.set_content("");
+            });
             return;
         }
         "/quit" => {
@@ -134,18 +195,16 @@ fn send_message(siv: &mut Cursive, msg: String) {
         _ => {}
     }
 
-    let writer = siv
-        .user_data::<Arc<Mutex<OwnedWriteHalf>>>()
-        .unwrap()
-        .clone();
-
-    tokio::spawn(async move {
-        let _ = writer
-            .lock()
-            .await
-            .write_all(format!("{msg}\n").as_bytes())
-            .await;
-    });
+    if let Some(client_data) = siv.user_data::<ClientData>() {
+        let writer = client_data.writer.clone();
+        tokio::spawn(async move {
+            let _ = writer
+                .lock()
+                .await
+                .write_all(format!("{msg}\n").as_bytes())
+                .await;
+        });
+    }
 
     siv.call_on_name("input", |view: &mut EditView| {
         view.set_content("");

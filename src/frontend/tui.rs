@@ -7,20 +7,40 @@ use cursive::{
     views::{Dialog, DummyView, EditView, LinearLayout, Panel, ScrollView, TextView},
 };
 
-/// Handles the TUI setup.
+use crate::client::add_scroll_callbacks;
+
+// ... restante do código
+/// Builds the entire TUI by calling the necessary setup functions.
+/// 
+/// ## Why use this?
+/// Calling the multiple setup functions individually in separate places can make some
+/// parts of the TUI run on different threads, which can lead to **unexpected behavior**.
+/// By using this function, you ensure that all parts of the TUI are available in the **same _tokio_ thread**,
+/// and allow changing screens by popping layers without losing any functionality. This function should
+/// be called **before** spawning a _tokio_ thread.
+/// 
+/// ## How to use:
+/// Screen layers are organized in a stack **(LIFO)**, so the order on which each setup function is
+/// called matters. The username screen must be on top of the chat screen, so `set_username` must be
+/// called after `handle_chat`, as it will be popped as soon as the user sets their username, with
+/// the chat screen remaining underneath.
+pub fn build_tui(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
+    handle_chat(siv, input_action);
+    set_username(siv, input_action);
+    add_scroll_callbacks(siv);
+}
+
+/// Handles the chat setup.
 ///
 /// ### Parameters
 /// - `siv`: The TUI struct from the Cursive crate;
-/// - `username`: The username of the current client;
 /// - `input_action`: Function to be run on input box submission.
-pub fn handle_tui(siv: &mut Cursive, username: String, input_action: fn(&mut Cursive, String)) {
-    // Load theme from file
-    siv.load_toml(include_str!("assets/style.toml")).unwrap();
-
+fn handle_chat(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
     // Header to be displayed at the top
-    let header = TextView::new(format!(r#"⋘ ( *^-^)ρ ⭐ WELCOME {username} ⭐ &(^0^* )⋙"#))
+    let header = TextView::new(make_header("".to_string()))
         .style(PaletteColor::Secondary)
-        .h_align(HAlign::Center);
+        .h_align(HAlign::Center)
+        .with_name("header");
 
     // Message area
     let messages = TextView::new("")
@@ -77,4 +97,69 @@ pub fn handle_tui(siv: &mut Cursive, username: String, input_action: fn(&mut Cur
             view.set_content("/");
         });
     });
+}
+
+/// Displays a popup to set the username.
+///
+/// ### Parameters
+/// - `siv`: The TUI struct from the Cursive crate;
+/// - `input_action`: Function to be run on input box submission.
+fn set_username(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
+    let input = EditView::new()
+        .on_submit(move |s, text| input_action(s, text.to_string()))
+        .style(PaletteColor::Secondary)
+        .max_content_width(20)
+        .with_name("input");
+
+    let message = TextView::new("Please type your username below.").with_name("message");
+
+    let tip = TextView::new("Press ESC to quit.")
+        .style(PaletteColor::Secondary)
+        .fixed_height(1)
+        .with_name("tip");
+
+    let layout = LinearLayout::vertical()
+        .child(DummyView.min_height(1))
+        .child(message)
+        .child(tip)
+        .child(DummyView.min_height(1))
+        .child(input);
+
+    siv.add_global_callback(Key::Esc, |s| s.quit());
+
+    let background = DummyView.full_screen();
+    siv.add_fullscreen_layer(background);
+
+    let popup = Dialog::around(layout)
+        .title("Welcome to Rustbreak🦀")
+        .title_position(HAlign::Center);
+
+    siv.add_layer(popup);
+}
+
+/// Displays a critical error popup with the given message.
+/// Prompts the user to quit the application.
+///
+/// ### Parameters
+/// - `siv`: The TUI struct from the Cursive crate;
+/// - `error_msg`: The error message to be displayed.
+pub fn error_popup(siv: &mut Cursive, error_msg: &str) {
+    let message = TextView::new(error_msg).style(PaletteColor::Tertiary);
+
+    let layout = LinearLayout::vertical()
+        .child(DummyView.min_height(1))
+        .child(message)
+        .child(DummyView.min_height(1));
+
+    let popup = Dialog::around(layout)
+        .title("ERROR")
+        .title_position(HAlign::Center)
+        .button("Quit", |siv| siv.quit());
+
+    siv.add_layer(popup);
+}
+
+/// Creates the header string with the given username.
+pub fn make_header(username: String) -> String {
+    format!(r#"⋘ ( *^-^)ρ ⭐ WELCOME {username} ⭐ &(^0^* )⋙"#)
 }
