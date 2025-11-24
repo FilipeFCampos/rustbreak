@@ -1,0 +1,5 @@
+[alias]
+bc = "build --bin client"
+bs = "build --bin server"
+rc = "run --bin client"
+rs = "run --bin server"
