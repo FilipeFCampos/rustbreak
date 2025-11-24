@@ -97,6 +97,29 @@ fn handle_chat(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
             view.set_content("/");
         });
     });
+
+    siv.add_global_callback(cursive::event::Event::Unknown(vec![127]), |s| {
+        s.call_on_name("input", |view: &mut EditView| {
+            let mut content = view.get_content().to_string();
+            content.pop();
+            view.set_content(content);
+        });
+    });
+
+    siv.add_global_callback(cursive::event::Event::Unknown(vec![8]), |s| {
+        s.call_on_name("input", |view: &mut EditView| {
+            let mut content = view.get_content().to_string();
+            let mut chars = content.chars();
+            chars.next();
+            view.set_content(chars.as_str());
+        });
+    }); 
+
+    siv.add_global_callback(cursive::event::Event::CtrlChar('u'), |s| {
+        s.call_on_name("input", |view: &mut EditView| {
+            view.set_content("");
+        });
+    }); 
 }
 
 /// Displays a popup to set the username.
