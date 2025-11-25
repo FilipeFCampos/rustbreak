@@ -78,85 +78,78 @@ async fn handle_connection(
     let mut username = String::new();
 
     // Read the username of the user who just joined
-    reader.read_line(&mut username).await.expect(&format!(
-        "{RED}ERROR: Failed to read username from client.{RESET}"
-    ));
-    let username = username.trim().to_string();
-
-    // This flag is a horrendous programming practice but it will do for now
-    // TODO: Find a better way to handle this
-    let mut error_carry = false;
-
-    // Add new player to registry
-    let player = Player::new(username.clone());
-    let mut registry_locked = registry.lock().await;
-    match registry_locked.add(player) {
-        None => {
-            let ok_signal = EventSignal::Ok(username.clone());
-            let ok_signal = serde_json::to_string(&ok_signal).unwrap();
-            writer.write_all(ok_signal.as_bytes()).await.unwrap();
-            // This usually fails if the client aborts the connection during the username screen
-            // In that case, we just want to prematurely end this function
-            // If there is any other error, we want to log it
-            match writer.write_all(b"\n").await {
-                Ok(_) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {
-                    eprintln!(
-                        "├─[{}] {YELLOW}{} aborted the connection.{RESET}",
-                        get_time(),
-                        addr
-                    );
-                    registry_locked.remove(username.clone());
-                    drop(registry_locked);
-                    return;
-                }
-                Err(e) => {
-                    eprintln!(
-                        "├─[{}] {RED}ERROR: Unexpected IO error from {}: {}{RESET}",
-                        get_time(),
-                        addr,
-                        e
-                    );
-                    registry_locked.remove(username.clone());
-                    drop(registry_locked);
-                    return;
-                }
+    loop {
+        username.clear();
+        match reader.read_line(&mut username).await {
+            Ok(0) => return,
+            Ok(_) => {},
+            Err(e) => { eprintln!("{RED}ERROR: Failed to read from {}: {}{RESET}", addr, e);
+                return;
             }
-            // Send join message
-            let join_msg = ChatMessage {
-                username: username.clone(),
-                content: "joined the chat!".to_string(),
-                timestamp: get_time(),
-                message_type: MessageType::SystemNotification,
-            };
-            println!(
-                "├─[{}] {GREEN}'{}' joined the chat!{RESET}",
-                join_msg.timestamp, username
-            );
-            let join_msg_json = serde_json::to_string(&join_msg).unwrap();
-            sender.send(join_msg_json).unwrap();
         }
-        Some(_) => {
-            let error_msg = format!(
-                "┌─[{}] {BLUE}{}{RESET}\n└─ {RED}ERROR: Username [{}] is already in use.{RESET}",
-                get_time(),
-                addr,
-                username
-            );
-            eprintln!("{}", error_msg);
+
+        let trimmed_username = username.trim().to_string();
+
+        if trimmed_username.is_empty() {
+            continue; // Ignore empty inputs and wait for the next one.
+        }
+        
+        let mut registry_locked = registry.lock().await;
+
+        // Add new player to registry
+        if registry_locked.add(Player::new(trimmed_username.clone())).is_some() {
             // Send "this username is already taken" message
-            // All this might change so take it with a grain of salt
+            let error_msg = format!("Username [{}] is already in use. Please try another.", trimmed_username);
+            eprintln!("┌─[{}] {BLUE}{}{RESET}\n└─ {RED}Denied: {}{RESET}", get_time(), addr, error_msg);
+
             let error_signal = EventSignal::Error(error_msg);
-            let error_signal = serde_json::to_string(&error_signal).unwrap();
-            writer.write_all(error_signal.as_bytes()).await.unwrap();
-            writer.write_all(b"\n").await.unwrap();
-
-            error_carry = true;
+            let error_signal_json = serde_json::to_string(&error_signal).unwrap();
+            
+            if writer.write_all(error_signal_json.as_bytes()).await.is_err() || writer.write_all(b"\n").await.is_err() {
+                return; 
+            }
+        
+            drop(registry_locked);
+            continue; 
         }
-    }
-    drop(registry_locked);
 
+        drop(registry_locked);
+        username = trimmed_username;
+
+        let ok_signal = EventSignal::Ok(username.clone());
+        let ok_signal_json = serde_json::to_string(&ok_signal).unwrap();
+
+        if writer.write_all(ok_signal_json.as_bytes()).await.is_err() || writer.write_all(b"\n").await.is_err() {
+             let mut registry_locked = registry.lock().await;
+             registry_locked.remove(username.clone());
+             return;
+        }
+
+        // Send join message
+        let join_msg = ChatMessage {
+            username: username.clone(),
+            content: "joined the chat!".to_string(),
+            timestamp: get_time(),
+            message_type: MessageType::SystemNotification,
+        };
+        println!(
+            "├─[{}] {GREEN}'{}' joined the chat!{RESET}",
+            join_msg.timestamp, username
+        );
+        let join_msg_json = serde_json::to_string(&join_msg).unwrap();
+        sender.send(join_msg_json).unwrap();
+
+        break;
+    }
+
+    //Chat loop
     let mut line = String::new();
+
+    // DANGER: Using `unwrap()` on network I/O operations is risky.
+    // If the connection drops unexpectedly (e.g. "Connection reset by peer") or the
+    // channel fails, `unwrap()` will panic. This crashes the client task immediately
+    // and might prevent proper cleanup (like removing the user from the registry).
+    // TODO: Replace `unwrap()` with `match` or `if let` for graceful error handling.
     loop {
         tokio::select! {
             // Handle messages sent by the client
@@ -187,12 +180,9 @@ async fn handle_connection(
         }
     }
 
-    // Removes the current player from the registry
-    if error_carry {
-        return;
-    }
+    // Disconnect
     let mut registry_locked = registry.lock().await;
-    let _ = registry_locked.remove(username.clone());
+    registry_locked.remove(username.clone());
     drop(registry_locked);
 
     // Send leave message

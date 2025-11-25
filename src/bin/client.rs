@@ -96,11 +96,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
             // P.s. the next 20 lines of code were incredibly painful to come up with
             // Please remember to take a break and drink some water!
             // Because I did not.
-            } else if let Ok(signal) = serde_json::from_str::<EventSignal>(&line) {
+            }  
+            else if let Ok(signal) = serde_json::from_str::<EventSignal>(&line) {
                 match signal {
-                    EventSignal::Error(_) => {
+                    EventSignal::Error(error_msg) => {
                         let _ = sink.send(Box::new(move |siv: &mut Cursive| {
-                            tui::error_popup(siv, "Username already taken.");
+                            siv.pop_layer();
+                            // Error Popup
+                            siv.add_layer(
+                                cursive::views::Dialog::text(error_msg)
+                                    .title("Erro de Login")
+                                    .button("Tentar Novamente", |s| {
+                                        s.pop_layer();
+                                    })
+                            );
                         }));
                     }
                     EventSignal::Ok(name) => sink

@@ -129,10 +129,17 @@ fn handle_chat(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
 /// - `input_action`: Function to be run on input box submission.
 fn set_username(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
     let input = EditView::new()
-        .on_submit(move |s, text| input_action(s, text.to_string()))
-        .style(PaletteColor::Secondary)
-        .max_content_width(20)
-        .with_name("input");
+        .on_submit(move |s, text| {
+            let name = text.trim().to_string();
+            if name.is_empty() { return; }
+
+            // Send to the server
+            input_action(s, name);
+
+            s.add_layer(Dialog::text("Connecting to Potiguara-Q...")
+                .title("Please wait"));
+        })
+        .style(PaletteColor::Secondary);
 
     let message = TextView::new("Please type your username below.").with_name("message");
 
@@ -150,8 +157,9 @@ fn set_username(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
 
     siv.add_global_callback(Key::Esc, |s| s.quit());
 
-    let background = DummyView.full_screen();
-    siv.add_fullscreen_layer(background);
+    // It is not necessary
+    // let background = DummyView.full_screen();
+    // siv.add_fullscreen_layer(background);
 
     let popup = Dialog::around(layout)
         .title("Welcome to Rustbreak🦀")
