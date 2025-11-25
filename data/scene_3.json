@@ -1,0 +1,14 @@
+{
+	"id": 3,
+	"description": "Vocês resolvem ir até à Cantina para encher o bucho, mas antes de chegar na entrada percebem algo de muito errado: a cantina está inundada de salgados e doces que não param de se multiplicar. A porta está coberta de bolos de potes e o vidro ameaça arrebentar pela pressão dos belos mas temíveis croissants.. e, do lado de fora, os alunos estão morrendo de fome e de medo de se aproximar! Vocês olham para o terminal e se perguntam o que pode estar causando essa multiplicação infinita…",
+	"code": "struct Cantina {\n  alimentos: Vec<Comida>,\n  capacidade: usize\n}\n\nimpl Cantina {\nfn abastecer_cantina(&mut self, comidas: mut Vec<Comida>) {\n   let fila = comidas.clone();\n   while !comidas.is_empty() {\n     if let Some(comida) = fila.pop() {\n       self.alimentos.push(*comida);\n     }\n     else if fila.is_empty() { fila = comidas.clone(); }\n   }\n}\n}",
+	"options": {
+		"a": "O campo 'capacidade' não está sendo verificado conforme os alimentos vão sendo adicionados.",
+		"b": "O loop 'while' continua infinitamente apenas por culpa do 'else if' que popula novamente a fila caso ela acabe.",
+		"c": "O loop 'while' continua infinitamente apenas porque está sendo verificada a lista original, que se mantém intacta, ao invés do clone.",
+		"d": "O loop 'while' continua infinitamente apenas porque dentro do loop a comida é removida (.pop()) da fila clonada e não do vetor original.",
+		"id_correct": "d"
+	},
+	"success_msg": "Exatamente! Vocês identificam que o loop nunca termina porque o vetor original não é modificado. Vocês ajustam o código, então, para que o .pop ocorra em 'comidas' e não em 'fila' e deixam o resto como já estava, apesar de não estar nem de longe um código bom. Assim que vocês ajustam, todo o excesso de comida desaparece instantaneamente e os alimentos voltam para dentro das estantes de onde nunca deveriam ter saído! Ao mesmo tempo que respiram aliviados e até comemoram, os alunos têm um olhar triste por não terem conseguido comer aquela avalanche de comida enquanto dava… bem, ao menos não irão sufocar nela!",
+	"error_msg": "Vocês tentam modificar o código achando que encontraram o problema, mas nada resolve. Mais e mais comida vai aparecendo até que os vidros não aguentam e quebram: agora, a avalanche de comida está se espalhando pelo prédio! Vocês escapam para o térreo e as portas de vidro são fechadas, mas também não aguentarão muito. Vocês notam que alguns corajosos ficaram para atrás para combater aquele monstro de uma forma honrosa: devorando-o. Vocês desejam sorte a eles e fogem."
+}
