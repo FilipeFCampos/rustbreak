@@ -2,17 +2,20 @@ use cursive::{
     Cursive,
     views::{EditView, NamedView, ScrollView, TextView},
 };
+use rustbreak::frontend::tui;
 use rustbreak::{
+    client::{
+        ScrollState, add_scroll_callbacks, check_scroll_position, enable_auto_scroll,
+        scroll_to_bottom,
+    },
     common::{
         formatting::*,
         messages::{ChatMessage, EventSignal, MessageType},
         shared::*,
     },
     frontend::tui::make_header,
-    client::{ScrollState, add_scroll_callbacks, scroll_to_bottom, check_scroll_position, enable_auto_scroll}
 };
-use rustbreak::frontend::tui;
-use std::{error::Error, sync::Arc};
+use std::{error::Error, sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{TcpStream, tcp::OwnedWriteHalf},
@@ -57,7 +60,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Async task to handle incoming messages
     tokio::spawn(async move {
-        while let Ok(Some(line)) = lines.next_line().await {
+        'main_loop: while let Ok(Some(line)) = lines.next_line().await {
             // The received message json object is converted back to a `ChatMessage`
             if let Ok(msg) = serde_json::from_str::<ChatMessage>(&line) {
                 let formatted_msg = match msg.message_type {
@@ -69,29 +72,34 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         format!("\n[{}: {}]\n", msg.username, msg.content)
                     }
                 };
-                
+
                 // This writes the message in the chat
-                if sink
-                    .send(Box::new(move |siv: &mut Cursive| {
-                        siv.call_on_name("messages", |view: &mut TextView| {
-                            view.append(formatted_msg);
-                        });
-
-                        let should_scroll = {
-                            if let Some(client_data) = siv.user_data::<ClientData>() {
-                                client_data.scroll_state.auto_scroll
-                            } else {
-                                true
-                            }
-                        };
-
-                        if should_scroll {
-                            scroll_to_bottom(siv);
+                match msg.message_type {
+                    // TODO: Create a third `message_type` representing game scenarios/events.
+                    // Only those messages should be printed with a typing effect.
+                    MessageType::UserMessage => {
+                        if sink
+                            .send(Box::new(move |siv: &mut Cursive| {
+                                print_message(siv, formatted_msg);
+                            }))
+                            .is_err()
+                        {
+                            break 'main_loop;
                         }
-                    }))
-                    .is_err()
-                {
-                    break;
+                    }
+                    MessageType::SystemNotification => {
+                        for ch in formatted_msg.chars() {
+                            if sink
+                                .send(Box::new(move |siv: &mut Cursive| {
+                                    print_message(siv, ch.to_string());
+                                }))
+                                .is_err()
+                            {
+                                break 'main_loop;
+                            }
+                            std::thread::sleep(Duration::from_millis(50));
+                        }
+                    }
                 }
             // P.s. the next 20 lines of code were incredibly painful to come up with
             // Please remember to take a break and drink some water!
@@ -179,7 +187,7 @@ fn send_message(siv: &mut Cursive, msg: String) {
             return;
         }
         "/scrolloff" => {
-            check_scroll_position(siv); 
+            check_scroll_position(siv);
             siv.call_on_name("messages", |view: &mut TextView| {
                 view.append("\n[Auto-scroll disabled]\n");
             });
@@ -209,4 +217,29 @@ fn send_message(siv: &mut Cursive, msg: String) {
     siv.call_on_name("input", |view: &mut EditView| {
         view.set_content("");
     });
+}
+
+/// Prints a message to the chat view, respecting the auto-scroll state.
+///
+/// This function should be called inside the Cursive event sink.
+///
+/// ### Parameters
+/// - `siv`: The TUI struct from the Cursive crate;
+/// - `msg`: The message to be printed.
+fn print_message(siv: &mut Cursive, msg: String) {
+    siv.call_on_name("messages", |view: &mut TextView| {
+        view.append(msg);
+    });
+
+    let should_scroll = {
+        if let Some(client_data) = siv.user_data::<ClientData>() {
+            client_data.scroll_state.auto_scroll
+        } else {
+            true
+        }
+    };
+
+    if should_scroll {
+        scroll_to_bottom(siv);
+    }
 }
