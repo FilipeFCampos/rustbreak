@@ -4,10 +4,10 @@ use rustbreak::common::{
     messages::{ChatMessage, EventSignal, MessageType},
     shared::*,
 };
-use rustbreak::game::game_manager::GameManager;
-use rustbreak::game::player::Player;
+use rustbreak::game::game_session::GameSession;
+use rustbreak::handlers::server_handlers::{ServerSessions, register_player, remove_player};
 use std::{error::Error, sync::Arc};
-use tokio::sync::broadcast::Receiver;
+use tokio::sync::broadcast::{Receiver, Sender};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{TcpListener, TcpStream},
@@ -18,7 +18,10 @@ use uuid::Uuid;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind(format!("{ADDRESS}:{PORT}")).await?;
-    let game_manager = Arc::new(Mutex::new(GameManager::new()));
+    let sessions = Arc::new(Mutex::new(vec![(
+        GameSession::new(),
+        broadcast::channel::<String>(128).0,
+    )]));
 
     welcome_message();
 
@@ -33,9 +36,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         );
         println!("└─ Address: {BLUE}{addr}{RESET}");
 
-        let game_manager_clone = Arc::clone(&game_manager);
+        let sessions_clone = Arc::clone(&sessions);
         // Spawn a thread for handling each user's connection
-        tokio::spawn(async move { handle_connection(socket, game_manager_clone, addr).await });
+        tokio::spawn(async move { handle_connection(socket, sessions_clone, addr).await });
     }
 }
 
@@ -61,7 +64,7 @@ fn welcome_message() {
 /// - `registry`: A Registry to store the current player _(client)_
 async fn handle_connection(
     mut socket: TcpStream,
-    game_manager: Arc<Mutex<GameManager>>,
+    sessions: Arc<Mutex<Vec<(GameSession, Sender<String>)>>>,
     addr: core::net::SocketAddr,
 ) {
     // Split socket into reader and writer
@@ -89,12 +92,8 @@ async fn handle_connection(
             continue; // Ignore empty inputs and wait for the next one.
         }
 
-        let mut game_lock = game_manager.lock().await;
-
         // Add new player to registry
-        if let Ok((id, receiver)) =
-            game_lock.register_player_on_party(Player::new(trimmed_username.clone()))
-        {
+        if let Ok((id, receiver)) = register_player(&sessions, trimmed_username.clone()).await {
             party_id = Some(id);
             channel_receiver = Some(receiver);
         } else {
@@ -121,12 +120,9 @@ async fn handle_connection(
             {
                 return;
             }
-
-            drop(game_lock);
             continue;
         }
 
-        drop(game_lock);
         username = trimmed_username;
 
         let ok_signal = EventSignal::Ok(username.clone());
@@ -135,8 +131,7 @@ async fn handle_connection(
         if writer.write_all(ok_signal_json.as_bytes()).await.is_err()
             || writer.write_all(b"\n").await.is_err()
         {
-            let mut game_manager_lock = game_manager.lock().await;
-            game_manager_lock.remove_player_on_party(&username, None);
+            remove_player(&sessions, &username, None).await;
             return;
         }
 
@@ -152,7 +147,7 @@ async fn handle_connection(
             join_msg.timestamp, username
         );
         let join_msg_json = serde_json::to_string(&join_msg).unwrap();
-        broadcast_message(join_msg_json, party_id.unwrap(), &game_manager).await;
+        broadcast_message(join_msg_json, party_id.unwrap(), &sessions).await;
 
         break;
     }
@@ -180,7 +175,7 @@ async fn handle_connection(
                         println!("┌─[{}] {YELLOW}{}{RESET}\n└─ Message: {BLUE}{}{RESET}", msg.timestamp, username, msg.content);
 
                         // The json object is sent to the client
-                        broadcast_message(msg_json, party_id.unwrap(), &game_manager).await;
+                        broadcast_message(msg_json, party_id.unwrap(), &sessions).await;
                         line.clear(); // Clear the buffer
                     },
                     Err(_) => {}
@@ -205,9 +200,7 @@ async fn handle_connection(
     }
 
     // Disconnect
-    let mut game_manager_lock = game_manager.lock().await;
-    game_manager_lock.remove_player_on_party(&username, party_id);
-    drop(game_manager_lock);
+    remove_player(&sessions, &username, party_id).await;
 
     // Send leave message
     let leave_msg = ChatMessage {
@@ -223,16 +216,18 @@ async fn handle_connection(
     );
 
     let leave_msg_json = serde_json::to_string(&leave_msg).unwrap();
-    broadcast_message(leave_msg_json, party_id.unwrap(), &game_manager).await;
+    broadcast_message(leave_msg_json, party_id.unwrap(), &sessions).await;
 }
 
-async fn broadcast_message(msg: String, party_id: Uuid, game_manager: &Arc<Mutex<GameManager>>) {
-    let game = game_manager.lock().await;
-    let party = game.get_session(party_id);
-    if let Some(party) = party {
-        let _ = party.party.sender.send(msg);
+async fn broadcast_message(msg: String, party_id: Uuid, sessions: &ServerSessions) {
+    let sessions = sessions.lock().await;
+    let party = sessions.iter().find(|(s, _)| s.id == party_id);
+
+    if let Some((party, sender)) = party {
+        let _ = sender.send(msg);
     }
-    drop(game);
+
+    drop(sessions);
 }
 
 // TODO: Move 'add new player to registry' code here

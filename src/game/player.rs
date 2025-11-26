@@ -1,5 +1,3 @@
-use std::collections::{HashMap, HashSet};
-use tokio::sync::broadcast;
 use uuid::Uuid;
 
 /// Models a player connected to the server.
@@ -18,13 +16,14 @@ impl Player {
     }
 }
 
+/*
 /// Stores a `HashSet` of all players connected to a party and a broadcast channel
 /// to allow communication between players.
 ///
 /// Each player in the map is identified by its `username`, making easier check for duplicated users.
 pub struct Registry {
     pub players: HashSet<Player>,
-    pub sender: broadcast::Sender<String>,
+    // pub sender: broadcast::Sender<String>,
 }
 
 impl Registry {
@@ -62,3 +61,4 @@ impl Registry {
             .is_some()
     }
 }
+*/
