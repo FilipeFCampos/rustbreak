@@ -136,7 +136,7 @@ async fn handle_connection(
             || writer.write_all(b"\n").await.is_err()
         {
             let mut game_manager_lock = game_manager.lock().await;
-            game_manager_lock.remove_player_on_party(&username); // TODO: is removing from all players, must remove only from 1 party!!
+            game_manager_lock.remove_player_on_party(&username, None);
             return;
         }
 
@@ -205,9 +205,8 @@ async fn handle_connection(
     }
 
     // Disconnect
-    // TODO: Somehow is disconnecting ALL players?!
     let mut game_manager_lock = game_manager.lock().await;
-    game_manager_lock.remove_player_on_party(&username);
+    game_manager_lock.remove_player_on_party(&username, party_id);
     drop(game_manager_lock);
 
     // Send leave message

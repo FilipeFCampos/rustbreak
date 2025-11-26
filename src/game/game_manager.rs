@@ -61,9 +61,22 @@ impl GameManager {
         }
     }
 
-    // TODO: it's removing from ALL sessions. Should remove only from 1, but it's papo for later
-    pub fn remove_player_on_party(&mut self, username: &String) {
-        self.sessions
-            .retain(|session| !session.party.contains(username))
+    pub fn remove_player_on_party(&mut self, username: &String, party_id: Option<Uuid>) {
+        match party_id {
+            None => {
+                if let Some(session) = self
+                    .sessions
+                    .iter_mut()
+                    .find(|session| session.party.contains(username))
+                {
+                    session.party.remove(username.clone());
+                }
+            }
+            Some(id) => {
+                if let Some(session) = self.sessions.iter_mut().find(|s| s.id == id) {
+                    session.party.remove(username.clone());
+                }
+            }
+        }
     }
 }
