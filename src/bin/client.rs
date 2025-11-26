@@ -2,16 +2,19 @@ use cursive::{
     Cursive,
     views::{EditView, NamedView, ScrollView, TextView},
 };
+use rustbreak::frontend::tui;
 use rustbreak::{
+    client::{
+        ScrollState, add_scroll_callbacks, check_scroll_position, enable_auto_scroll,
+        scroll_to_bottom,
+    },
     common::{
         formatting::*,
         messages::{ChatMessage, EventSignal, MessageType},
         shared::*,
     },
     frontend::tui::make_header,
-    client::{ScrollState, add_scroll_callbacks, scroll_to_bottom, check_scroll_position, enable_auto_scroll}
 };
-use rustbreak::frontend::tui;
 use std::{error::Error, sync::Arc};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -69,7 +72,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         format!("\n[{}: {}]\n", msg.username, msg.content)
                     }
                 };
-                
+
                 // This writes the message in the chat
                 if sink
                     .send(Box::new(move |siv: &mut Cursive| {
@@ -96,8 +99,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             // P.s. the next 20 lines of code were incredibly painful to come up with
             // Please remember to take a break and drink some water!
             // Because I did not.
-            }  
-            else if let Ok(signal) = serde_json::from_str::<EventSignal>(&line) {
+            } else if let Ok(signal) = serde_json::from_str::<EventSignal>(&line) {
                 match signal {
                     EventSignal::Error(error_msg) => {
                         let _ = sink.send(Box::new(move |siv: &mut Cursive| {
@@ -108,7 +110,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     .title("Erro de Login")
                                     .button("Tentar Novamente", |s| {
                                         s.pop_layer();
-                                    })
+                                    }),
                             );
                         }));
                     }
@@ -188,7 +190,7 @@ fn send_message(siv: &mut Cursive, msg: String) {
             return;
         }
         "/scrolloff" => {
-            check_scroll_position(siv); 
+            check_scroll_position(siv);
             siv.call_on_name("messages", |view: &mut TextView| {
                 view.append("\n[Auto-scroll disabled]\n");
             });

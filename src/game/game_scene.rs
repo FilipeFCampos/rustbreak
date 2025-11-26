@@ -1,6 +1,4 @@
 use serde::{Deserialize, Serialize};
-// They all should have the same lifetime because they only exist mutually
-// It's string for now because deserialization with from_reader requires this, not &'a str
 
 #[derive(Serialize, Deserialize, Debug)]
 struct SceneOptions {
@@ -19,4 +17,10 @@ pub struct GameScene {
     options: SceneOptions,
     success_msg: String,
     error_msg: String,
+}
+
+pub enum GameSceneState {
+    Prelude,
+    Normal(GameScene),
+    Ending(GameScene),
 }
