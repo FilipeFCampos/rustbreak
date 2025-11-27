@@ -123,6 +123,31 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             });
                         }))
                         .unwrap(),
+                    
+                    EventSignal::Scene(scene) => {
+                        let description = scene.description.clone();
+                        let code = scene.code.clone();
+
+                        let formatted_scene = format!(
+                            "\n=== Scene {} ===\n\n{}\n\nCódigo:\n{}\n\nOpções:\nA) {}\nB) {}\nC) {}\nD) {}\n",
+                            scene.id,
+                            description,
+                            code,
+                            scene.options.a,
+                            scene.options.b,
+                            scene.options.c,
+                            scene.options.d
+                        );
+
+                        let _ = sink.send(Box::new(move |siv: &mut Cursive| {
+                            // Shows scene in chat
+                            siv.call_on_name("messages", |view: &mut TextView| {
+                                view.append(formatted_scene);
+                            });
+
+                            scroll_to_bottom(siv);
+                        }));
+                    }
                 }
             }
         }

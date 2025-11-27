@@ -5,6 +5,7 @@ use rustbreak::common::{
     shared::*,
 };
 use rustbreak::game::game_session::GameSession;
+use rustbreak::game::game_scene::GameSceneState;
 use rustbreak::handlers::server_handlers::{ServerSessions, register_player, remove_player};
 use std::{error::Error, sync::Arc};
 use tokio::sync::broadcast::{Receiver, Sender};
@@ -149,6 +150,33 @@ async fn handle_connection(
         let join_msg_json = serde_json::to_string(&join_msg).unwrap();
         broadcast_message(join_msg_json, party_id.unwrap(), &sessions).await;
 
+        if let Some(id) = party_id {
+            let mut sessions_guard = sessions.lock().await;
+
+            if let Some((session, sender)) =
+                sessions_guard.iter_mut().find(|(s, _)| s.id == id)
+            {
+                if session.party.len() == 3 {
+                    session.begin_game();
+
+                    let start_msg = ChatMessage {
+                        username: "System".into(),
+                        content: "Game started! The adventure begins...".into(),
+                        timestamp: get_time(),
+                        message_type: MessageType::SystemNotification,
+                    };
+
+                    let json = serde_json::to_string(&start_msg).unwrap();
+                    let _ = sender.send(json);
+
+                    if let GameSceneState::Normal(scene) = &session.current_scene_state {
+                        let scene_signal = EventSignal::Scene(scene.clone());
+                        let scene_json = serde_json::to_string(&scene_signal).unwrap();
+                        let _ = sender.send(scene_json);
+                    }
+                }
+            }
+        }
         break;
     }
 

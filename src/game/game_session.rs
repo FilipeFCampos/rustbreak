@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::fs::{File, OpenOptions};
 use std::io::BufReader;
 use uuid::Uuid;
+use std::path::PathBuf;
 
 pub enum GameTurn {
     Server,
@@ -54,16 +55,27 @@ impl GameSession {
     }
 
     pub fn update(&mut self, event : GameEvent) {
+        //TODO O PROXIMO PASSO SERIA AQUI AMANHA EU FAÇO ISSO :D
+    }        
 
+    pub fn get_scene_json(&self) -> Option<String> {
+        match &self.current_scene_state {
+            GameSceneState::Normal(scene) => {
+                serde_json::to_string(scene).ok()
+            }
+            _ => None,
+        }
     }
-    fn load_scene(&mut self, path: &str) -> Result<(), &'static str> {
-        let mut n_path = String::from("data/");
-        n_path.push_str(path);
 
-        match OpenOptions::new().read(true).open(n_path) {
+    fn load_scene(&mut self, path: &str) -> Result<(), &'static str> {
+        //thought absolute paths were bad practice but this is the only way i could get it to work turns out it was an ally
+        let mut full_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        full_path.push("data");
+        full_path.push(path);
+
+        match File::open(&full_path) {
             Ok(file) => {
                 let reader = BufReader::new(file);
-
                 match serde_json::from_reader::<BufReader<File>, GameScene>(reader) {
                     Ok(game_scene) => {
                         self.current_scene_state = GameSceneState::Normal(game_scene);
@@ -76,11 +88,28 @@ impl GameSession {
         }
     }
 
+
     pub fn toggle_turn(&mut self) {
         match self.current_turn {
             GameTurn::Server => self.current_turn = GameTurn::Player,
             GameTurn::Player => self.current_turn = GameTurn::Server,
         }
+    }
+
+    pub fn begin_game(&mut self) {
+        self.current_scene_state = GameSceneState::Prelude;
+        if let Err(_) = self.load_scene("scene_1.json") {
+            println!("Error loading initial scene.");
+        } else {
+            println!("Initial scene loaded successfully!");
+        }
+
+        if let GameSceneState::Normal(ref scene) = self.current_scene_state {
+            println!("Scene loaded: {:?}", scene);
+        }
+        self.current_turn = GameTurn::Server;
+
+        println!("Session {} started with {} players.", self.id, self.party.len());
     }
 }
 
