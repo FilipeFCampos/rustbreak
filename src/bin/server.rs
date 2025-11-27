@@ -5,7 +5,7 @@ use rustbreak::common::{
     shared::*,
 };
 use rustbreak::game::game_scene::GameSceneState;
-use rustbreak::game::game_session::GameSession;
+use rustbreak::game::game_session::{GameEvent, GameSession};
 use rustbreak::handlers::server_handlers::{ServerSessions, register_player, remove_player};
 use std::collections::HashMap;
 use std::{error::Error, sync::Arc};
@@ -179,6 +179,31 @@ async fn handle_connection(
                 match result {
                     Ok(0) => break,
                     Ok(_) => {
+                        let content = line.trim().to_string();
+                        if content.starts_with("/answer ") {
+                            let answer = content.replace("/answer", "").trim().to_string();
+                            let mut sessions_guard = sessions.lock().await;
+                            if let Some((session, session_sender)) = sessions_guard.get_mut(&party_id.unwrap()) {
+                                if let Some(feedback) = session.update(
+                                    GameEvent::PlayerAnswer {
+                                        username: username.clone(),
+                                        answer,
+                                    }
+                                ) {
+                                    let system_msg = ChatMessage {
+                                        username: "System".into(),
+                                        content: feedback,
+                                        timestamp: get_time(),
+                                        message_type: MessageType::SystemNotification,
+                                    };
+                                    let json = serde_json::to_string(&system_msg).unwrap();
+                                    let _ = session_sender.send(json);
+                                }
+                            }
+                            line.clear();
+                            continue; // not in normal chat
+                        }
+
                         // Broadcast a user message
                         let msg = ChatMessage {
                             username: username.clone(),

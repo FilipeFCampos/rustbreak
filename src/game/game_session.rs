@@ -15,7 +15,9 @@ pub enum GameTurn {
     Player,
 }
 
-pub enum GameEvent {}
+pub enum GameEvent {
+    PlayerAnswer { username: String , answer: String },
+}
 
 #[derive(Clone)]
 pub struct GameSession {
@@ -59,8 +61,23 @@ impl GameSession {
         self.party.retain(|p| p.username != *username)
     }
 
-    pub fn update(&mut self, event: GameEvent) {
-        //TODO O PROXIMO PASSO SERIA AQUI AMANHA EU FAÇO ISSO :D
+    pub fn update(&mut self, event: GameEvent) -> Option<String> {
+        match event {
+            GameEvent::PlayerAnswer { username, answer } => {
+                match &self.current_scene_state {
+                    GameSceneState::Normal(scene) => {
+                        let answer = answer.trim().to_lowercase();
+
+                        if answer == scene.options.id_correct.to_lowercase() {
+                            Some(format!("{} guess it right! {}", username, scene.success_msg))
+                        } else {
+                            Some(format!("{} guess it wrong! {}", username, scene.error_msg))
+                        }
+                    }
+                    _ => None,
+                }
+            }
+        }
     }
 
     pub fn get_scene_json(&self) -> Option<String> {
