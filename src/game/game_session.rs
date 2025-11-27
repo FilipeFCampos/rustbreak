@@ -3,18 +3,21 @@ use crate::game::player::Player;
 use std::collections::HashSet;
 use std::fs::{File, OpenOptions};
 use std::io::BufReader;
-use uuid::Uuid;
 use std::path::PathBuf;
+use tokio::sync::broadcast::Sender;
+use uuid::Uuid;
 
+pub const MAX_PLAYERS_PER_SESSION: usize = 3;
+
+#[derive(Clone)]
 pub enum GameTurn {
     Server,
     Player,
 }
 
-pub enum GameEvent {
+pub enum GameEvent {}
 
-}
-
+#[derive(Clone)]
 pub struct GameSession {
     pub id: Uuid,
     pub current_scene_state: GameSceneState,
@@ -35,6 +38,8 @@ impl GameSession {
     pub fn add_player(&mut self, username: String) -> Result<(), String> {
         if self.contains(&username) {
             return Err(format!("Player already registered: {}", username));
+        } else if self.party.len() >= 3 {
+            return Err(format!("Party already full: {}", username));
         }
 
         match self.party.insert(Player::new(username.clone())) {
@@ -54,15 +59,13 @@ impl GameSession {
         self.party.retain(|p| p.username != *username)
     }
 
-    pub fn update(&mut self, event : GameEvent) {
+    pub fn update(&mut self, event: GameEvent) {
         //TODO O PROXIMO PASSO SERIA AQUI AMANHA EU FAÇO ISSO :D
-    }        
+    }
 
     pub fn get_scene_json(&self) -> Option<String> {
         match &self.current_scene_state {
-            GameSceneState::Normal(scene) => {
-                serde_json::to_string(scene).ok()
-            }
+            GameSceneState::Normal(scene) => serde_json::to_string(scene).ok(),
             _ => None,
         }
     }
@@ -88,7 +91,6 @@ impl GameSession {
         }
     }
 
-
     pub fn toggle_turn(&mut self) {
         match self.current_turn {
             GameTurn::Server => self.current_turn = GameTurn::Player,
@@ -109,7 +111,11 @@ impl GameSession {
         }
         self.current_turn = GameTurn::Server;
 
-        println!("Session {} started with {} players.", self.id, self.party.len());
+        println!(
+            "Session {} started with {} players.",
+            self.id,
+            self.party.len()
+        );
     }
 }
 

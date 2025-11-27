@@ -4,9 +4,10 @@ use rustbreak::common::{
     messages::{ChatMessage, EventSignal, MessageType},
     shared::*,
 };
-use rustbreak::game::game_session::GameSession;
 use rustbreak::game::game_scene::GameSceneState;
+use rustbreak::game::game_session::GameSession;
 use rustbreak::handlers::server_handlers::{ServerSessions, register_player, remove_player};
+use std::collections::HashMap;
 use std::{error::Error, sync::Arc};
 use tokio::sync::broadcast::{Receiver, Sender};
 use tokio::{
@@ -19,10 +20,11 @@ use uuid::Uuid;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind(format!("{ADDRESS}:{PORT}")).await?;
-    let sessions = Arc::new(Mutex::new(vec![(
-        GameSession::new(),
-        broadcast::channel::<String>(128).0,
-    )]));
+
+    let sessions: ServerSessions = Arc::new(Mutex::new(HashMap::<
+        Uuid,
+        (GameSession, Sender<String>),
+    >::new()));
 
     welcome_message();
 
@@ -65,7 +67,7 @@ fn welcome_message() {
 /// - `registry`: A Registry to store the current player _(client)_
 async fn handle_connection(
     mut socket: TcpStream,
-    sessions: Arc<Mutex<Vec<(GameSession, Sender<String>)>>>,
+    sessions: ServerSessions,
     addr: core::net::SocketAddr,
 ) {
     // Split socket into reader and writer
@@ -149,35 +151,21 @@ async fn handle_connection(
         );
         let join_msg_json = serde_json::to_string(&join_msg).unwrap();
         broadcast_message(join_msg_json, party_id.unwrap(), &sessions).await;
+        break;
+    }
 
-        if let Some(id) = party_id {
-            let mut sessions_guard = sessions.lock().await;
-
-            if let Some((session, sender)) =
-                sessions_guard.iter_mut().find(|(s, _)| s.id == id)
-            {
-                if session.party.len() == 3 {
-                    session.begin_game();
-
-                    let start_msg = ChatMessage {
-                        username: "System".into(),
-                        content: "Game started! The adventure begins...".into(),
-                        timestamp: get_time(),
-                        message_type: MessageType::SystemNotification,
-                    };
-
-                    let json = serde_json::to_string(&start_msg).unwrap();
-                    let _ = sender.send(json);
-
-                    if let GameSceneState::Normal(scene) = &session.current_scene_state {
-                        let scene_signal = EventSignal::Scene(scene.clone());
-                        let scene_json = serde_json::to_string(&scene_signal).unwrap();
-                        let _ = sender.send(scene_json);
-                    }
+    if let Some(id) = party_id {
+        let guard = sessions.lock().await;
+        match guard.get(&id) {
+            None => {}
+            Some(tuple) => {
+                if tuple.0.party.len() == 3 {
+                    let tuple = tuple.clone();
+                    tokio::spawn(async move { game_loop(tuple).await });
                 }
             }
         }
-        break;
+        drop(guard);
     }
 
     // Chat loop
@@ -249,9 +237,9 @@ async fn handle_connection(
 
 async fn broadcast_message(msg: String, party_id: Uuid, sessions: &ServerSessions) {
     let sessions = sessions.lock().await;
-    let party = sessions.iter().find(|(s, _)| s.id == party_id);
+    let party = sessions.get(&party_id);
 
-    if let Some((party, sender)) = party {
+    if let Some((_, sender)) = party {
         let _ = sender.send(msg);
     }
 
@@ -261,4 +249,25 @@ async fn broadcast_message(msg: String, party_id: Uuid, sessions: &ServerSession
 // TODO: Move 'add new player to registry' code here
 fn new_player_handler() {
     todo!()
+}
+
+// TODO: make a loop
+async fn game_loop((mut session, sender): (GameSession, Sender<String>)) {
+    session.begin_game();
+
+    let start_msg = ChatMessage {
+        username: "System".into(),
+        content: "Game started! The adventure begins...".into(),
+        timestamp: get_time(),
+        message_type: MessageType::SystemNotification,
+    };
+
+    let json = serde_json::to_string(&start_msg).unwrap();
+    let _ = sender.send(json);
+
+    if let GameSceneState::Normal(scene) = &session.current_scene_state {
+        let scene_signal = EventSignal::Scene(scene.clone());
+        let scene_json = serde_json::to_string(&scene_signal).unwrap();
+        let _ = sender.send(scene_json);
+    }
 }

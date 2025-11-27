@@ -1,6 +1,6 @@
 use cursive::{
     Cursive,
-    views::{EditView, NamedView, ScrollView, TextView},
+    views::{EditView, TextView},
 };
 use rustbreak::frontend::tui;
 use rustbreak::{
@@ -123,7 +123,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             });
                         }))
                         .unwrap(),
-                    
+
                     EventSignal::Scene(scene) => {
                         let description = scene.description.clone();
                         let code = scene.code.clone();

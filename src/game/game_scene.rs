@@ -6,7 +6,7 @@ pub struct SceneOptions {
     pub b: String,
     pub c: String,
     pub d: String,
-    pub id_correct: String, 
+    pub id_correct: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
