@@ -1,22 +1,27 @@
 use serde::{Deserialize, Serialize};
-// They all should have the same lifetime because they only exist mutually
-// It's string for now because deserialization with from_reader requires this, not &'a str
 
-#[derive(Serialize, Deserialize, Debug)]
-struct SceneOptions {
-    a: String,
-    b: String,
-    c: String,
-    d: String,
-    id_correct: char,
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SceneOptions {
+    pub a: String,
+    pub b: String,
+    pub c: String,
+    pub d: String,
+    pub id_correct: String, 
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GameScene {
-    id: u8,
-    description: String,
-    code: String,
-    options: SceneOptions,
-    success_msg: String,
-    error_msg: String,
+    pub id: u8,
+    pub description: String,
+    pub code: String,
+    pub options: SceneOptions,
+    pub success_msg: String,
+    pub error_msg: String,
+}
+
+#[derive(Debug, Clone)]
+pub enum GameSceneState {
+    Prelude,
+    Normal(GameScene),
+    Ending(GameScene),
 }

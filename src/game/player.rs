@@ -1,8 +1,7 @@
-use std::collections::HashMap;
 use uuid::Uuid;
 
 /// Models a player connected to the server.
-#[derive(Clone)]
+#[derive(Clone, Hash, Eq, PartialEq)]
 pub struct Player {
     pub id: Uuid,
     pub username: String,
@@ -17,27 +16,49 @@ impl Player {
     }
 }
 
-/// Stores a `HashMap` of all players connected to the server.
+/*
+/// Stores a `HashSet` of all players connected to a party and a broadcast channel
+/// to allow communication between players.
 ///
-/// Each player in the map is identified by its `username`. I used `username`
-/// instead of `id` as the key to easily check if there are duplicate usernames
-/// and prompt the client for a new one.
+/// Each player in the map is identified by its `username`, making easier check for duplicated users.
 pub struct Registry {
-    players: HashMap<String, Player>,
+    pub players: HashSet<Player>,
+    // pub sender: broadcast::Sender<String>,
 }
 
 impl Registry {
     pub fn new() -> Self {
+        let (sender, _) = broadcast::channel::<String>(128);
         Self {
-            players: HashMap::new(),
+            players: HashSet::new(),
+            sender,
         }
     }
 
-    pub fn add(&mut self, player: Player) -> Option<Player> {
-        self.players.insert(player.username.clone(), player)
+    pub fn add(&mut self, player: Player) -> Result<(), String> {
+        if self.contains(&player.username) {
+            return Err(format!("Player already registered: {}", player.username));
+        }
+
+        match self.players.insert(player.clone()) {
+            true => Ok(()),
+            false => Err("Cannot add player twice".to_string()),
+        }
     }
 
-    pub fn remove(&mut self, username: String) -> Option<Player> {
-        self.players.remove(&username)
+    pub fn remove(&mut self, username: String) {
+        self.players.retain(|p| p.username != username)
+    }
+
+    pub fn len(&self) -> usize {
+        self.players.len()
+    }
+
+    pub fn contains(&self, username: &String) -> bool {
+        self.players
+            .iter()
+            .find(|p| p.username == *username)
+            .is_some()
     }
 }
+*/
