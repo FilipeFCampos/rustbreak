@@ -86,6 +86,7 @@ impl GameSession {
     /// Antes: retornava mensagem por jogador individual
     /// Agora: só retorna mensagem quando TODOS responderam
     pub fn update(&mut self, event: GameEvent) -> UpdateResult {
+        // TODO: controlar isso aqui pra só permitir alterar o estado quando o jogo realmente tiver começado
         match event {
             GameEvent::PlayerAnswer { username, answer } => {
                 let scene = match &self.current_scene_state {

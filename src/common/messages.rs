@@ -36,5 +36,6 @@ pub enum MessageType {
 pub enum EventSignal {
     Ok(String),
     Error(String),
-    Scene(GameScene), 
+    Scene(GameScene),
+    Shutdown,
 }

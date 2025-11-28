@@ -68,10 +68,18 @@ async fn handle_connection(
     let (reader, mut writer) = socket.split();
     let mut reader = BufReader::new(reader);
     let mut username = String::new();
-    let mut party_id: Option<Uuid> = None;
-    let mut broadcast: Option<broadcast::Receiver<String>> = None;
-    let mut event_channel: Option<mpsc::Sender<GameEvent>> = None;
+    // temos esses quatro dados primordiais
+    let mut party_id: Option<Uuid> = None; // auto-explicativo, eh o id da sessão a qual o usuário pertence;
+                                            // antes era mais útil, talvez possamos tirar
+    let mut broadcast: Option<broadcast::Receiver<String>> = None; // canal de comunicação do servidor para todos os jogadores
+    let mut event_channel: Option<mpsc::Sender<GameEvent>> = None; // canal que possibilita o isolamento entre handle_connection e game_loop
+    // com essa queue, handle_connection consegue empilhar eventos daquela sessão que serão lidos paralelamente pelo game_loop
     let mut event_receiver: Option<mpsc::Receiver<GameEvent>> = None;
+    // enquanto o event_channel permite o handle_connection empilhar, o event_receiver é justamente o observador do game_loop
+    // dessa ação, desempilhando as ações e podendo tomar decisões
+
+    // seguir essa ideia é interessante para manter um isolamento bem massa entre as duas funções, pois antes estava aglutinado
+    // e dificultava muito de tentar fazer alguma coisa. espero que se prove uma técnica legal kkkkkkk
 
     // LOGIN + REGISTRO DO PLAYER
     loop {
@@ -199,6 +207,7 @@ async fn handle_connection(
         break;
     }
 
+    // coloquei asserts só pra garantir que podemos fazer unwrap de forma 100% segura abaixo.
     assert!(party_id.is_some());
     assert!(event_channel.is_some());
     assert!(broadcast.is_some());
@@ -344,14 +353,25 @@ async fn game_loop(
 
                         let json = serde_json::to_string(&msg).unwrap();
                         let _ = broadcast_channel.send(format!("{}\n", json));
-                        // Avançar turno
+                        // TODO: Avançar turno
                     }
                     UpdateResult::Continue => {
                         // Não faz nada kkkk
                     }
                     UpdateResult::EndGame => {
                         let end_game_msg = "Andando pelos corredores do IMD, vocês recebem uma notificação no terminal. Quando o abrem, leem a seguinte mensagem: \n 'Caros ajudantes, vocês se provaram ineficientes para a tarefa a qual lhes foi passada. Infelizmente, lhes falta conhecimento do nosso sistema para que consigam nos ajudar. Desejo que prosperem no seu desenvolvimento enquanto programadores e em outra vida sejam capazes de me ajudar. \nCrab Guardian'. Vocês saem cabisbaixos pela entrada do IMD sabendo que falharam na missão, esperando que outras pessoas mais experientes sejam capazes de consertar este caos.".into();
-                        let _ = broadcast_channel.send(end_game_msg);
+                        let final_msg = ChatMessage {
+                            username: SYSTEM_NAME.into(),
+                            content: end_game_msg,
+                            timestamp: get_time(),
+                            message_type: MessageType::SystemNotification,
+                        };
+                        let final_msg = serde_json::to_string(&final_msg).unwrap();
+                        let _ = broadcast_channel.send(final_msg);
+
+                        let shutdown_signal= EventSignal::Shutdown;
+                        let json = serde_json::to_string(&shutdown_signal).unwrap();
+                        let _ = broadcast_channel.send(json);
                         break;
                     }
                 }

@@ -1,12 +1,13 @@
+use cursive::views::Dialog;
 use cursive::{
-    Cursive,
     views::{EditView, TextView},
+    Cursive,
 };
 use rustbreak::frontend::tui;
 use rustbreak::{
     client::{
-        ScrollState, add_scroll_callbacks, check_scroll_position, enable_auto_scroll,
-        scroll_to_bottom,
+        add_scroll_callbacks, check_scroll_position, enable_auto_scroll, scroll_to_bottom,
+        ScrollState,
     },
     common::{
         formatting::*,
@@ -15,10 +16,11 @@ use rustbreak::{
     },
     frontend::tui::make_header,
 };
+use std::time::Duration;
 use std::{error::Error, sync::Arc};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    net::{TcpStream, tcp::OwnedWriteHalf},
+    net::{tcp::OwnedWriteHalf, TcpStream},
     sync::Mutex,
 };
 
@@ -107,9 +109,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             // Error Popup
                             siv.add_layer(
                                 cursive::views::Dialog::text(error_msg)
-                                    .title("Erro de Login")
-                                    .button("Tentar Novamente", |s| {
                                     .title("Login Error")
+                                    .button("Try Again", |s| {
                                         s.pop_layer();
                                     }),
                             );
@@ -148,6 +149,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                             scroll_to_bottom(siv);
                         }));
+                    }
+                    EventSignal::Shutdown => {
+                        // TODO: está acontecendo algum panic! ao finalizar, consegui ver pelo debug. Não está impactando
+                        // nas outras partidas, mas é algo estranho
+
+                        // primeiro exibe uma mensagem de finalização e depois realmente quita.
+                        let _ = sink
+                            .send(Box::new(|siv: &mut Cursive| {
+                                siv.add_layer(Dialog::info("Fim de Jogo!"));
+
+                                let cb = siv.cb_sink().clone();
+
+                                tokio::spawn(async move {
+                                    tokio::time::sleep(Duration::from_secs(5)).await;
+                                    cb.send(Box::new(|s| s.quit())).unwrap();
+                                });
+                            }))
+                            .unwrap();
                     }
                 }
             }
