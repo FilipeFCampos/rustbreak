@@ -109,6 +109,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 cursive::views::Dialog::text(error_msg)
                                     .title("Erro de Login")
                                     .button("Tentar Novamente", |s| {
+                                    .title("Login Error")
                                         s.pop_layer();
                                     }),
                             );
