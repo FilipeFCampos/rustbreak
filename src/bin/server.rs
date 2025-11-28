@@ -6,7 +6,9 @@ use rustbreak::common::{
 };
 use rustbreak::game::game_scene::GameSceneState;
 use rustbreak::game::game_session::{GameEvent, GameSession};
-use rustbreak::handlers::server_handlers::{ServerSessions, register_player, remove_player};
+use rustbreak::handlers::server_handlers::{
+    ServerSessions, register_player, remove_player
+};
 use std::collections::HashMap;
 use std::{error::Error, sync::Arc};
 use tokio::sync::broadcast::{Receiver, Sender};
@@ -21,18 +23,22 @@ use uuid::Uuid;
 async fn main() -> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind(format!("{ADDRESS}:{PORT}")).await?;
 
+    // ANTES: O servidor armazenava (GameSession, Sender)
+    // Problema: GameSession era CLONADO quando enviado ao game_loop, então cada player atualizava uma CÓPIA diferente.
+    // Resultado: game_loop nunca via as respostas dos jogadores -> ficava eternamente em "Aguardando mais respostas...".
+    // AGORA: GameSession fica dentro de Arc<Mutex<_>>
+    // significa que TODOS os handlers (server, players e game_loop) compartilham exatamente a MESMA sessão.
+    //agora: answer -> session.update() -> game_loop vê atualização
     let sessions: ServerSessions = Arc::new(Mutex::new(HashMap::<
         Uuid,
-        (GameSession, Sender<String>),
+        (Arc<Mutex<GameSession>>, Sender<String>),
     >::new()));
 
     welcome_message();
 
     loop {
-        // Accept connection
         let (socket, addr) = listener.accept().await?;
 
-        // Display connection
         println!(
             "┌─[{}] {GREEN}New Connection!{RESET}",
             Local::now().format("%H:%M:%S")
@@ -40,12 +46,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         println!("└─ Address: {BLUE}{addr}{RESET}");
 
         let sessions_clone = Arc::clone(&sessions);
-        // Spawn a thread for handling each user's connection
         tokio::spawn(async move { handle_connection(socket, sessions_clone, addr).await });
     }
 }
 
-/// Prints the server's welcome message.
 fn welcome_message() {
     println!("╔════════════════════════════════════════╗");
     println!("║                                        ║");
@@ -58,227 +62,223 @@ fn welcome_message() {
     println!("╚════════════════════════════════════════╝");
 }
 
-/// Handles the connection and communication between a client and the server.
-///
-/// ### Parameters
-/// - `socket`: The TCP socket server;
-/// - `receiver`: A Receiver listening to the broadcast channel;
-/// - `sender`: The broadcast Sender;
-/// - `registry`: A Registry to store the current player _(client)_
 async fn handle_connection(
     mut socket: TcpStream,
     sessions: ServerSessions,
     addr: core::net::SocketAddr,
 ) {
-    // Split socket into reader and writer
     let (reader, mut writer) = socket.split();
     let mut reader = BufReader::new(reader);
     let mut username = String::new();
     let mut party_id: Option<Uuid> = None;
     let mut channel_receiver: Option<Receiver<String>> = None;
 
-    // Read the username of the user who just joined
+    // LOGIN + REGISTRO DO PLAYER
     loop {
         username.clear();
+
         match reader.read_line(&mut username).await {
             Ok(0) => return,
             Ok(_) => {}
             Err(e) => {
-                eprintln!("{RED}ERROR: Failed to read from {}: {}{RESET}", addr, e);
+                eprintln!("{RED}ERROR reading from {addr}: {e}{RESET}");
                 return;
             }
         }
 
-        let trimmed_username = username.trim().to_string();
-
-        if trimmed_username.is_empty() {
-            continue; // Ignore empty inputs and wait for the next one.
-        }
-
-        // Add new player to registry
-        if let Ok((id, receiver)) = register_player(&sessions, trimmed_username.clone()).await {
-            party_id = Some(id);
-            channel_receiver = Some(receiver);
-        } else {
-            // Send "this username is already taken" message
-            let error_msg = format!(
-                "Username [{}] is already in use. Please try another.",
-                trimmed_username
-            );
-            eprintln!(
-                "┌─[{}] {BLUE}{}{RESET}\n└─ {RED}Denied: {}{RESET}",
-                get_time(),
-                addr,
-                error_msg
-            );
-
-            let error_signal = EventSignal::Error(error_msg);
-            let error_signal_json = serde_json::to_string(&error_signal).unwrap();
-
-            if writer
-                .write_all(error_signal_json.as_bytes())
-                .await
-                .is_err()
-                || writer.write_all(b"\n").await.is_err()
-            {
-                return;
-            }
+        let trimmed = username.trim().to_string();
+        if trimmed.is_empty() {
             continue;
         }
 
-        username = trimmed_username;
+        match register_player(&sessions, trimmed.clone()).await {
+            Ok((id, receiver)) => {
+                party_id = Some(id);
+                channel_receiver = Some(receiver);
+            }
+            Err(err) => {
+                let error_signal = EventSignal::Error(err.clone());
+                let json = serde_json::to_string(&error_signal).unwrap();
+
+                if writer.write_all(json.as_bytes()).await.is_err()
+                    || writer.write_all(b"\n").await.is_err()
+                {
+                    return;
+                }
+                continue;
+            }
+        }
+
+        username = trimmed;
 
         let ok_signal = EventSignal::Ok(username.clone());
-        let ok_signal_json = serde_json::to_string(&ok_signal).unwrap();
+        let json = serde_json::to_string(&ok_signal).unwrap();
 
-        if writer.write_all(ok_signal_json.as_bytes()).await.is_err()
+        if writer.write_all(json.as_bytes()).await.is_err()
             || writer.write_all(b"\n").await.is_err()
         {
             remove_player(&sessions, &username, None).await;
             return;
         }
 
-        // Send join message
-        let join_msg = ChatMessage {
-            username: username.clone(),
-            content: "joined the chat!".to_string(),
-            timestamp: get_time(),
-            message_type: MessageType::SystemNotification,
-        };
-        println!(
-            "├─[{}] {GREEN}'{}' joined the chat!{RESET}",
-            join_msg.timestamp, username
-        );
-        let join_msg_json = serde_json::to_string(&join_msg).unwrap();
-        broadcast_message(join_msg_json, party_id.unwrap(), &sessions).await;
         break;
     }
 
-    if let Some(id) = party_id {
+    let join_msg = ChatMessage {
+        username: username.clone(),
+        content: "joined the chat!".into(),
+        timestamp: get_time(),
+        message_type: MessageType::SystemNotification,
+    };
+
+    let join_json = serde_json::to_string(&join_msg).unwrap();
+    broadcast_message(join_json, party_id.unwrap(), &sessions).await;
+
+    println!(
+        "├─[{}] {GREEN}'{}' joined the chat!{RESET}",
+        join_msg.timestamp, username
+    );
+
+    // INICIAR GAME LOOP QUANDO TIVER 3 PLAYERS
+    {
         let guard = sessions.lock().await;
-        match guard.get(&id) {
-            None => {}
-            Some(tuple) => {
-                if tuple.0.party.len() == 3 {
-                    let tuple = tuple.clone();
-                    tokio::spawn(async move { game_loop(tuple).await });
-                }
+
+        if let Some((session_arc, sender)) = guard.get(&party_id.unwrap()) {
+            let s = session_arc.lock().await;
+            // ANTES: isso rodava com COPIA -> game_loop nunca recebia update
+            // AGORA: usa Arc<Mutex<>> -> todos compartilham a MESMA session
+            if s.party.len() == 3 {
+                let session_shared = Arc::clone(session_arc);
+                let sender_clone = sender.clone();
+
+                tokio::spawn(async move {
+                    game_loop(session_shared, sender_clone).await;
+                });
             }
         }
-        drop(guard);
     }
-
-    // Chat loop
     let mut line = String::new();
-    let mut receiver = channel_receiver.take().expect("Receiver should exist here");
+    let mut receiver = channel_receiver.take().unwrap();
 
     loop {
         tokio::select! {
-            // Handle messages sent by the client
+            // CLIENT -> SERVIDOR
             result = reader.read_line(&mut line) => {
                 match result {
                     Ok(0) => break,
                     Ok(_) => {
                         let content = line.trim().to_string();
                         if content.starts_with("/answer ") {
-                            let answer = content.replace("/answer", "").trim().to_string();
-                            let mut sessions_guard = sessions.lock().await;
-                            if let Some((session, session_sender)) = sessions_guard.get_mut(&party_id.unwrap()) {
-                                if let Some(feedback) = session.update(
-                                    GameEvent::PlayerAnswer {
-                                        username: username.clone(),
-                                        answer,
-                                    }
-                                ) {
-                                    let system_msg = ChatMessage {
-                                        username: "System".into(),
-                                        content: feedback,
-                                        timestamp: get_time(),
-                                        message_type: MessageType::SystemNotification,
-                                    };
-                                    let json = serde_json::to_string(&system_msg).unwrap();
-                                    let _ = session_sender.send(json);
+                            let answer = content["/answer ".len()..].trim().to_string();
+                            let party_id = party_id.unwrap();
+
+                            // CRITICAL BLOCK: agora session.update() altera A VERDADEIRA sessions compartilhada
+                            // ANTES: session era clonado -> update() acontecia numa cópia descartada -> game_loop nunca via nada.
+                            // AGORA: session_arc.lock() -> atualiza MESMO objeto.
+                            let (sender_clone, json_to_send) = {
+                                let mut guard = sessions.lock().await;
+
+                                let (session_arc, sender) = guard.get_mut(&party_id).unwrap();
+                                let mut session = session_arc.lock().await;
+
+                                let feedback_opt = session.update(GameEvent::PlayerAnswer {
+                                    username: username.clone(),
+                                    answer,
+                                });
+
+                                if feedback_opt.is_none() {
+                                    println!(
+                                        "┌─[{}] Aguardando mais respostas para a party {}...",
+                                        get_time(),
+                                        party_id
+                                    );
+                                    line.clear();
+                                    continue;
                                 }
-                            }
+
+                                let feedback = feedback_opt.unwrap();
+
+                                let msg = ChatMessage {
+                                    username: "System".into(),
+                                    content: feedback,
+                                    timestamp: get_time(),
+                                    message_type: MessageType::SystemNotification,
+                                };
+
+                                let json = serde_json::to_string(&msg).unwrap();
+
+                                (sender.clone(), json)
+                            };
+                            // ***** END CRITICAL BLOCK *****
+
+                            let _ = sender_clone.send(format!("{}\n", json_to_send));
                             line.clear();
-                            continue; // not in normal chat
+                            continue;
                         }
 
-                        // Broadcast a user message
+                        // CHAT NORMAL
                         let msg = ChatMessage {
                             username: username.clone(),
-                            content: line.trim().to_string(),
+                            content: content.clone(),
                             timestamp: get_time(),
                             message_type: MessageType::UserMessage,
                         };
-                        // This converts `ChatMessage` to a json object
-                        let msg_json = serde_json::to_string(&msg).unwrap();
-                        println!("┌─[{}] {YELLOW}{}{RESET}\n└─ Message: {BLUE}{}{RESET}", msg.timestamp, username, msg.content);
 
-                        // The json object is sent to the client
-                        broadcast_message(msg_json, party_id.unwrap(), &sessions).await;
-                        line.clear(); // Clear the buffer
-                    },
-                    Err(_) => {}
+                        let json = serde_json::to_string(&msg).unwrap();
+                        broadcast_message(json, party_id.unwrap(), &sessions).await;
+
+                        line.clear();
+                    }
+                    Err(_) => break
                 }
             }
-            // Handle incoming broadcasts and send them to the clients
+            // SERVIDOR -> CLIENT
             result = receiver.recv() => {
                 match result {
                     Ok(msg) => {
                         writer.write_all(msg.as_bytes()).await.unwrap();
-                        writer.write_all(b"\n").await.unwrap();
                     }
-                    Err(broadcast::error::RecvError::Lagged(_)) => {
-                        continue;
-                    }
-                    Err(broadcast::error::RecvError::Closed) => {
-                        break;
-                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => break,
                 }
             }
         }
     }
-
-    // Disconnect
     remove_player(&sessions, &username, party_id).await;
 
-    // Send leave message
     let leave_msg = ChatMessage {
         username: username.clone(),
-        content: "left the chat".to_string(),
+        content: "left the chat".into(),
         timestamp: get_time(),
         message_type: MessageType::SystemNotification,
     };
+
+    let leave_json = serde_json::to_string(&leave_msg).unwrap();
+    broadcast_message(leave_json, party_id.unwrap(), &sessions).await;
 
     println!(
         "├─[{}] {YELLOW}'{}' disconnected.{RESET}",
         leave_msg.timestamp, username
     );
-
-    let leave_msg_json = serde_json::to_string(&leave_msg).unwrap();
-    broadcast_message(leave_msg_json, party_id.unwrap(), &sessions).await;
 }
 
+// BROADCAST
 async fn broadcast_message(msg: String, party_id: Uuid, sessions: &ServerSessions) {
-    let sessions = sessions.lock().await;
-    let party = sessions.get(&party_id);
+    let guard = sessions.lock().await;
 
-    if let Some((_, sender)) = party {
-        let _ = sender.send(msg);
+    if let Some((_, sender)) = guard.get(&party_id) {
+        let _ = sender.send(format!("{}\n", msg));
     }
-
-    drop(sessions);
 }
 
-// TODO: Move 'add new player to registry' code here
-fn new_player_handler() {
-    todo!()
-}
-
-// TODO: make a loop
-async fn game_loop((mut session, sender): (GameSession, Sender<String>)) {
-    session.begin_game();
+// GAME LOOP — agora funciona corretamente
+// ANTES: recebia um GameSession COPIADO, ficava congelado esperando respostas que nunca chegavam.
+// AGORA: recebe Arc<Mutex<GameSession>> qualquer update via /answer é visível instantaneamente
+async fn game_loop(session: Arc<Mutex<GameSession>>, sender: Sender<String>) {
+    {
+        let mut s = session.lock().await;
+        s.begin_game();
+    }
 
     let start_msg = ChatMessage {
         username: "System".into(),
@@ -288,11 +288,14 @@ async fn game_loop((mut session, sender): (GameSession, Sender<String>)) {
     };
 
     let json = serde_json::to_string(&start_msg).unwrap();
-    let _ = sender.send(json);
+    let _ = sender.send(format!("{}\n", json));
 
-    if let GameSceneState::Normal(scene) = &session.current_scene_state {
-        let scene_signal = EventSignal::Scene(scene.clone());
-        let scene_json = serde_json::to_string(&scene_signal).unwrap();
-        let _ = sender.send(scene_json);
+    {
+        let s = session.lock().await;
+        if let GameSceneState::Normal(scene) = &s.current_scene_state {
+            let scene_signal = EventSignal::Scene(scene.clone());
+            let scene_json = serde_json::to_string(&scene_signal).unwrap();
+            let _ = sender.send(format!("{}\n", scene_json));
+        }
     }
 }
