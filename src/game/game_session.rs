@@ -8,12 +8,6 @@ use uuid::Uuid;
 
 pub const MAX_PLAYERS_PER_SESSION: usize = 3;
 
-#[derive(Clone)]
-pub enum GameTurn {
-    Server,
-    Player,
-}
-
 pub enum GameEvent {
     PlayerJoined(String),
     PlayerAnswer { username: String, answer: String },
@@ -21,17 +15,17 @@ pub enum GameEvent {
 }
 
 pub enum UpdateResult {
-    Advance(String),
-    Continue(Option<String>),
-    GameOver,
+    Advance(String),          // String guarda a mensagem de erro ou de acerto do cenário!
+    Continue(Option<String>), // tem String pra exibir a resposta do usuário diante da questão, None pra qualquer outra coisa
+    GameOver(String),         // guarda a mensagem de erro do cenário
 }
 
 #[derive(Clone)]
 pub struct GameSession {
     pub id: Uuid,
     pub current_scene_state: GameSceneState,
-    pub current_turn: GameTurn,
     pub party: HashSet<Player>,
+    pub has_started: bool,
     answers: HashMap<String, bool>,
     remaining_answers: i8,
     remaining_scenes: VecDeque<String>,
@@ -41,10 +35,10 @@ impl GameSession {
     pub fn new() -> Self {
         Self {
             id: Uuid::new_v4(),
-            current_turn: GameTurn::Server,
             current_scene_state: GameSceneState::Prelude,
             party: HashSet::new(),
             answers: HashMap::new(),
+            has_started: false,
             remaining_answers: 3,
             remaining_scenes: vec![
                 "scene_1".into(),
@@ -85,7 +79,11 @@ impl GameSession {
     /// Antes: retornava mensagem por jogador individual
     /// Agora: só retorna mensagem quando TODOS responderam
     pub fn update(&mut self, event: GameEvent) -> UpdateResult {
-        // TODO: controlar isso aqui pra só permitir alterar o estado quando o jogo realmente tiver começado
+        // Não permite atualizar nada do estado do jogo se não tiver iniciado ainda.
+        if !self.has_started {
+            return UpdateResult::Continue(None);
+        }
+
         match event {
             GameEvent::PlayerAnswer { username, answer } => {
                 let scene = match &self.current_scene_state {
@@ -124,7 +122,7 @@ impl GameSession {
 
                 // Se acabou a quantidade de tentativas então acaba o jogo!
                 if self.remaining_answers <= 0 {
-                    return UpdateResult::GameOver;
+                    return UpdateResult::GameOver(scene.error_msg.clone());
                 }
 
                 let mut count_result = format!(
@@ -170,14 +168,13 @@ impl GameSession {
         Ok(())
     }
 
-    pub fn toggle_turn(&mut self) {
-        self.current_turn = match self.current_turn {
-            GameTurn::Server => GameTurn::Player,
-            GameTurn::Player => GameTurn::Server,
-        };
-    }
-
     pub fn begin_game(&mut self) {
+        // Se já havia iniciado, pula
+        if self.has_started {
+            return;
+        }
+
+        self.has_started = true;
         if let Some(scene) = self.remaining_scenes.pop_front() {
             let res = self.load_scene(scene.as_str());
             if res.is_err() {
@@ -186,8 +183,6 @@ impl GameSession {
                 println!("Initial scene loaded successfully!");
             }
         }
-
-        self.current_turn = GameTurn::Server;
 
         println!(
             "Session {} started with {} players.",

@@ -10,6 +10,7 @@ use rustbreak::game::game_session::{
 };
 use rustbreak::handlers::server_handlers::{ServerSessions, SessionEntry};
 use std::collections::HashMap;
+use std::time::Duration;
 use std::{error::Error, sync::Arc};
 use tokio::sync::broadcast::Sender;
 use tokio::sync::mpsc;
@@ -310,7 +311,7 @@ async fn game_loop(
                 );
 
                 let mut s = session.lock().await;
-                if s.party.len() == 3 {
+                if s.party.len() == MAX_PLAYERS_PER_SESSION && !s.has_started {
                     s.begin_game();
 
                     send_server_msg("Aventura iniciada...".into(), &broadcast_channel).await;
@@ -340,7 +341,10 @@ async fn game_loop(
                         .await;
                     }
                     UpdateResult::Continue(None) => {}
-                    UpdateResult::GameOver => {
+                    UpdateResult::GameOver(error_msg) => {
+                        send_server_msg(error_msg, &broadcast_channel).await;
+                        tokio::time::sleep(Duration::from_secs(2)).await;
+
                         let end_game_msg = "Andando pelos corredores do IMD, vocês recebem uma notificação no terminal. Quando o abrem, leem a seguinte mensagem: \n 'Caros ajudantes, vocês se provaram ineficientes para a tarefa a qual lhes foi passada. Infelizmente, lhes falta conhecimento do nosso sistema para que consigam nos ajudar. Desejo que prosperem no seu desenvolvimento enquanto programadores e em outra vida sejam capazes de me ajudar. \nCrab Guardian'. Vocês saem cabisbaixos pela entrada do IMD sabendo que falharam na missão, esperando que outras pessoas mais experientes sejam capazes de consertar este caos.".into();
                         send_server_msg(end_game_msg, &broadcast_channel).await;
 
