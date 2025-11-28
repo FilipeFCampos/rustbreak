@@ -15,7 +15,14 @@ pub enum GameTurn {
 }
 
 pub enum GameEvent {
+    PlayerJoined(String),
     PlayerAnswer { username: String, answer: String },
+}
+
+pub enum UpdateResult {
+    Advance(String),
+    Continue,
+    EndGame,
 }
 
 #[derive(Clone)]
@@ -28,6 +35,8 @@ pub struct GameSession {
     // String -> username, bool -> acertou(true) / errou(false)
     // Isso permite aplicar a regra “se 2 acertarem, sucesso; se 2 errarem, erro”
     pub answers: HashMap<String, bool>,
+    pub remaining_answers: i8,
+    remaining_scenes: Vec<String>,
 }
 
 impl GameSession {
@@ -38,10 +47,20 @@ impl GameSession {
             current_scene_state: GameSceneState::Prelude,
             party: HashSet::new(),
             answers: HashMap::new(),
+            remaining_answers: 3,
+            remaining_scenes: vec![
+                "scene_1".into(),
+                "scene_2".into(),
+                "scene_3".into(),
+                "scene_4".into(),
+                "scene_5".into(),
+                "scene_6".into(),
+                "scene_7".into(),
+            ],
         }
     }
 
-    pub fn add_player(&mut self, username: String) -> Result<(), String> {
+    pub fn add_player(&mut self, username: &String) -> Result<(), String> {
         if self.contains(&username) {
             return Err(format!("Player already registered: {}", username));
         } else if self.party.len() >= MAX_PLAYERS_PER_SESSION {
@@ -66,29 +85,25 @@ impl GameSession {
     /// NOVO: lógica de votação por maioria (>= 2 acertos = sucesso)
     /// Antes: retornava mensagem por jogador individual
     /// Agora: só retorna mensagem quando TODOS responderam
-    pub fn update(&mut self, event: GameEvent) -> Option<String> {
+    pub fn update(&mut self, event: GameEvent) -> UpdateResult {
         match event {
             GameEvent::PlayerAnswer { username, answer } => {
                 let scene = match &self.current_scene_state {
                     GameSceneState::Normal(scene) => scene,
-                    _ => return None,
+                    _ => return UpdateResult::Continue,
                 };
 
-                // jogador já respondeu
-                if self.answers.contains_key(&username) {
-                    return None;
-                }
-
                 // verifica acerto individual
-                let correct =
-                    answer.trim().eq_ignore_ascii_case(&scene.options.id_correct);
+                let correct = answer
+                    .trim()
+                    .eq_ignore_ascii_case(&scene.options.id_correct);
 
                 // registra resposta
                 self.answers.insert(username.clone(), correct);
 
                 // se ainda falta jogador responder, nada acontece
                 if self.answers.len() < self.party.len() {
-                    return None;
+                    return UpdateResult::Continue;
                 }
 
                 // TODOS responderam -> aplicar maioria
@@ -97,19 +112,30 @@ impl GameSession {
 
                 // limpa respostas para próxima rodada
                 self.answers.clear();
-                 // regra principal: 2 ou mais acertos = sucesso
-                if correct_count >= 2 {
-                    Some(format!(
-                        "{} players got it right! {}",
-                        correct_count, scene.success_msg
-                    ))
+                let text_result: String;
+
+                // regra principal: acertos > erros = sucesso
+                if correct_count >= wrong_count {
+                    text_result = scene.success_msg.clone();
                 } else {
-                    Some(format!(
-                        "{} players got it wrong! {}",
-                        wrong_count, scene.error_msg
-                    ))
+                    text_result = scene.error_msg.clone();
+                    self.remaining_answers -= 1;
                 }
+
+                // Se acabou a quantidade de tentativas então acaba o jogo!
+                if self.remaining_answers <= 0 {
+                    return UpdateResult::EndGame;
+                }
+
+                let mut count_result = format!(
+                    "{} jogadores acertaram e {} erraram! Vocês ainda têm {} tentativa(s)! \n",
+                    correct_count, wrong_count, self.remaining_answers
+                );
+
+                count_result.push_str(&text_result);
+                UpdateResult::Advance(count_result)
             }
+            GameEvent::PlayerJoined(_) => UpdateResult::Continue,
         }
     }
 
@@ -128,7 +154,8 @@ impl GameSession {
         let file = File::open(&full_path).map_err(|_| "Failed to load scene.")?;
         let reader = BufReader::new(file);
 
-        let game_scene: GameScene = serde_json::from_reader(reader).map_err(|_| "Failed to deserialize game scene.")?;
+        let game_scene: GameScene =
+            serde_json::from_reader(reader).map_err(|_| "Failed to deserialize game scene.")?;
         self.current_scene_state = GameSceneState::Normal(game_scene);
         Ok(())
     }
@@ -160,7 +187,6 @@ impl GameSession {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     #[test]
     fn load_scene_1_test() {
         //TODO

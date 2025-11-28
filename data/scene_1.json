@@ -9,6 +9,6 @@
     "d": "A tipagem de x em u8 acarreta em um problema de overflow onde ao ultrapassar o valor máximo de u8 a variável é resetada",
     "id_correct": "d"
   },
-  "success_msg": "Exato! Quando x = 255 está tudo certo, mas ao adicionar 1, x retorna para 0, pois ocorre um overflow com o tipo u8 e o loop nunca acaba. Diante de todo o caos...",
-  "error_msg": "Vocês nem param para analisar..."
+  "success_msg": "Exato! Quando x = 255 está tudo certo, mas ao adicionar 1, x retorna para 0, pois ocorre um overflow com o tipo u8 e o loop nunca acaba. Diante de todo o caos e urgência, vocês só modificam o tipo u8 para u64, ao invés de tentar utilizar uma solução refinada como o checked_add(), e rezam para que esse problema não volte para os atormentar depois...",
+  "error_msg": "Vocês nem param para analisar e imediatamente tentam tratar a sintaxe do programa, o que resulta em erros de compilação (que antes não ocorriam!) e o corredor começa a transitar entre a vida real e o mais absoluto limbo sem parar. Sem tempo, vocês deixam como estavam e saem do corredor, ignorando o fato que condenaram todos ali a um ciclo vicioso sem perspectiva de terminar..."
 }
