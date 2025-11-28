@@ -75,9 +75,6 @@ impl GameSession {
         self.party.retain(|p| p.username != *username);
     }
 
-    /// NOVO: lógica de votação por maioria (>= 2 acertos = sucesso)
-    /// Antes: retornava mensagem por jogador individual
-    /// Agora: só retorna mensagem quando TODOS responderam
     pub fn update(&mut self, event: GameEvent) -> UpdateResult {
         // Não permite atualizar nada do estado do jogo se não tiver iniciado ainda.
         if !self.has_started {

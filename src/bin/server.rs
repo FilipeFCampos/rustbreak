@@ -12,7 +12,6 @@ use rustbreak::handlers::server_handlers::{ServerSessions, SessionEntry};
 use std::collections::HashMap;
 use std::time::Duration;
 use std::{error::Error, sync::Arc};
-use tokio::sync::broadcast::Sender;
 use tokio::sync::mpsc;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -72,8 +71,9 @@ async fn handle_connection(
     // temos esses quatro dados primordiais
     let mut party_id: Option<Uuid> = None; // auto-explicativo, eh o id da sessão a qual o usuário pertence;
     // antes era mais útil, talvez possamos tirar
-    let mut broadcast: Option<broadcast::Receiver<String>> = None; // canal de comunicação do servidor para todos os jogadores
-    let mut event_channel: Option<mpsc::Sender<GameEvent>> = None; // canal que possibilita o isolamento entre handle_connection e game_loop
+    let mut broadcast_receiver: Option<broadcast::Receiver<String>> = None; // canal de comunicação do servidor para todos os jogadores
+    let mut broadcast_sender: Option<broadcast::Sender<String>> = None;
+    let mut event_sender: Option<mpsc::Sender<GameEvent>> = None; // canal que possibilita o isolamento entre handle_connection e game_loop
     // com essa queue, handle_connection consegue empilhar eventos daquela sessão que serão lidos paralelamente pelo game_loop
     let mut event_receiver: Option<mpsc::Receiver<GameEvent>> = None;
     // enquanto o event_channel permite o handle_connection empilhar, o event_receiver é justamente o observador do game_loop
@@ -95,7 +95,6 @@ async fn handle_connection(
             }
         }
 
-        // fazendo aqui o shadowing
         let username_trim = username.trim().to_string();
         if username_trim.is_empty() {
             continue;
@@ -115,71 +114,80 @@ async fn handle_connection(
                 }
             }
 
-            let res: Result<(Uuid, broadcast::Receiver<String>, mpsc::Sender<GameEvent>), String> =
-                match available_id {
-                    // não tem party !!
-                    None => {
-                        let (broadcast_sender, _) = broadcast::channel::<String>(128);
-                        let (event_sender, event_receiver) = mpsc::channel::<GameEvent>(128);
+            let res: Result<
+                (
+                    Uuid,
+                    broadcast::Sender<String>,
+                    broadcast::Receiver<String>,
+                    mpsc::Sender<GameEvent>,
+                ),
+                String,
+            > = match available_id {
+                // não tem party !!
+                None => {
+                    let (broadcast_sender, broadcast_receiver) = broadcast::channel::<String>(128);
+                    let (event_sender, event_receiver) = mpsc::channel::<GameEvent>(128);
 
-                        let new_session = Arc::new(Mutex::new(GameSession::new()));
-                        let party_id = new_session.lock().await.id;
+                    let new_session = Arc::new(Mutex::new(GameSession::new()));
+                    let party_id = new_session.lock().await.id;
 
-                        sessions.insert(
-                            party_id,
-                            SessionEntry::new(
-                                new_session.clone(),
-                                broadcast_sender.clone(),
-                                event_sender.clone(),
-                            ),
-                        );
+                    sessions.insert(
+                        party_id,
+                        SessionEntry::new(
+                            new_session.clone(),
+                            broadcast_sender.clone(),
+                            event_sender.clone(),
+                        ),
+                    );
 
-                        let entry = sessions.get_mut(&party_id).unwrap();
+                    let entry = sessions.get_mut(&party_id).unwrap();
 
-                        // adiciona jogador numa session agora protegida por Mutex
-                        let mut session_lock = entry.session.lock().await;
-                        match session_lock.add_player(&username_trim) {
-                            Ok(_) => {
-                                let receiver = broadcast_sender.subscribe();
-                                drop(session_lock);
-                                let e = event_sender.clone();
+                    // adiciona jogador numa session agora protegida por Mutex
+                    let mut session_lock = entry.session.lock().await;
+                    match session_lock.add_player(&username_trim) {
+                        Ok(_) => {
+                            drop(session_lock);
+                            let event_clone = event_sender.clone();
+                            let broadcast_clone = broadcast_sender.clone();
 
-                                tokio::spawn(
-                                    async move {
-                                        game_loop(
-                                            new_session.clone(),
-                                            broadcast_sender.clone(),
-                                            e,
-                                            event_receiver,
-                                        )
-                                    }
-                                    .await,
-                                );
-                                Ok((party_id, receiver, event_sender))
-                            }
-                            Err(err) => Err(err),
+                            tokio::spawn(
+                                async move {
+                                    game_loop(
+                                        new_session.clone(),
+                                        broadcast_sender.clone(),
+                                        event_clone,
+                                        event_receiver,
+                                    )
+                                }
+                                .await,
+                            );
+                            Ok((party_id, broadcast_clone, broadcast_receiver, event_sender))
                         }
+                        Err(err) => Err(err),
                     }
-                    // tem party disponivel!!
-                    Some(available_session) => {
-                        let entry = sessions.get_mut(&available_session).unwrap();
-                        let mut session_lock = entry.session.lock().await;
-                        match session_lock.add_player(&username_trim) {
-                            Ok(_) => Ok((
-                                session_lock.id,
-                                entry.broadcast.subscribe(),
-                                entry.event_channel.clone(),
-                            )),
-                            Err(err) => Err(err),
-                        }
+                }
+                // tem party disponivel!!
+                Some(available_session) => {
+                    let entry = sessions.get_mut(&available_session).unwrap();
+                    let mut session_lock = entry.session.lock().await;
+                    match session_lock.add_player(&username_trim) {
+                        Ok(_) => Ok((
+                            session_lock.id,
+                            entry.broadcast.clone(),
+                            entry.broadcast.subscribe(),
+                            entry.event_channel.clone(),
+                        )),
+                        Err(err) => Err(err),
                     }
-                };
+                }
+            };
 
             match res {
-                Ok((id, b, e)) => {
+                Ok((id, b_sender, b_receiver, e_sender)) => {
                     party_id = Some(id);
-                    broadcast = Some(b);
-                    event_channel = Some(e);
+                    broadcast_sender = Some(b_sender);
+                    broadcast_receiver = Some(b_receiver);
+                    event_sender = Some(e_sender);
                 }
                 Err(err) => {
                     let error_signal = EventSignal::Error(err.clone());
@@ -213,11 +221,13 @@ async fn handle_connection(
 
     // coloquei asserts só pra garantir que podemos fazer unwrap de forma 100% segura abaixo.
     assert!(party_id.is_some());
-    assert!(event_channel.is_some());
-    assert!(broadcast.is_some());
+    assert!(event_sender.is_some());
+    assert!(broadcast_sender.is_some());
+    assert!(broadcast_receiver.is_some());
     let party_id = party_id.unwrap();
-    let event_channel = event_channel.unwrap();
-    let mut broadcast = broadcast.unwrap();
+    let event_channel = event_sender.unwrap();
+    let broadcast_sender = broadcast_sender.unwrap();
+    let mut broadcast_receiver = broadcast_receiver.unwrap();
 
     let _ = event_channel
         .send(GameEvent::PlayerJoined(username.clone()))
@@ -238,19 +248,11 @@ async fn handle_connection(
                     continue;
                 }
                 else {
-                        let msg = ChatMessage {
-                            username: username.clone(),
-                            content: content.clone(),
-                            timestamp: get_time(),
-                            message_type: MessageType::UserMessage,
-                        };
-
-                        let json = serde_json::to_string(&msg).unwrap();
-                        broadcast_message(json, party_id, &sessions).await;
+                    send_user_msg(&username, content.clone(), &broadcast_sender).await;
                 }
             }
 
-            result = broadcast.recv() => {
+            result = broadcast_receiver.recv() => {
                 if let Ok(message) = result {
                     writer.write_all(message.as_bytes()).await.unwrap();
                     writer.write_all(b"\n").await.unwrap();
@@ -276,18 +278,6 @@ async fn handle_connection(
     }
 }
 
-// BROADCAST
-async fn broadcast_message(msg: String, party_id: Uuid, sessions: &ServerSessions) {
-    let guard = sessions.lock().await;
-
-    if let Some(entry) = guard.get(&party_id) {
-        let _ = entry.broadcast.send(format!("{}\n", msg));
-    }
-}
-
-// GAME LOOP — agora funciona corretamente
-// ANTES: recebia um GameSession COPIADO, ficava congelado esperando respostas que nunca chegavam.
-// AGORA: recebe Arc<Mutex<GameSession>> qualquer update via /answer é visível instantaneamente
 async fn game_loop(
     session: Arc<Mutex<GameSession>>,
     broadcast_channel: broadcast::Sender<String>,
@@ -342,15 +332,7 @@ async fn game_loop(
                     }
                     UpdateResult::Continue(None) => {}
                     UpdateResult::GameOver(error_msg) => {
-                        send_server_msg(error_msg, &broadcast_channel).await;
-                        tokio::time::sleep(Duration::from_secs(2)).await;
-
-                        let end_game_msg = "Andando pelos corredores do IMD, vocês recebem uma notificação no terminal. Quando o abrem, leem a seguinte mensagem: \n 'Caros ajudantes, vocês se provaram ineficientes para a tarefa a qual lhes foi passada. Infelizmente, lhes falta conhecimento do nosso sistema para que consigam nos ajudar. Desejo que prosperem no seu desenvolvimento enquanto programadores e em outra vida sejam capazes de me ajudar. \nCrab Guardian'. Vocês saem cabisbaixos pela entrada do IMD sabendo que falharam na missão, esperando que outras pessoas mais experientes sejam capazes de consertar este caos.".into();
-                        send_server_msg(end_game_msg, &broadcast_channel).await;
-
-                        let shutdown_signal = EventSignal::Shutdown;
-                        let json = serde_json::to_string(&shutdown_signal).unwrap();
-                        let _ = broadcast_channel.send(json);
+                        game_over(error_msg, &broadcast_channel).await;
                         break;
                     }
                 }
@@ -367,13 +349,23 @@ async fn game_loop(
     }
 }
 
+async fn game_over(error_msg_scene: String, broadcast: &broadcast::Sender<String>) {
+    send_server_msg(error_msg_scene, &broadcast).await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    let end_game_msg = "Andando pelos corredores do IMD, vocês recebem uma notificação no terminal. Quando o abrem, leem a seguinte mensagem: \n 'Caros ajudantes, vocês se provaram ineficientes para a tarefa a qual lhes foi passada. Infelizmente, lhes falta conhecimento do nosso sistema para que consigam nos ajudar. Desejo que prosperem no seu desenvolvimento enquanto programadores e em outra vida sejam capazes de me ajudar. \nCrab Guardian'. Vocês saem cabisbaixos pela entrada do IMD sabendo que falharam na missão, esperando que outras pessoas mais experientes sejam capazes de consertar este caos.".into();
+    send_server_msg(end_game_msg, &broadcast).await;
+
+    let shutdown_signal = EventSignal::Shutdown;
+    let json = serde_json::to_string(&shutdown_signal).unwrap();
+    let _ = broadcast.send(json);
+}
+
 async fn emit_scene_signal(scene: &GameScene, broadcast: &broadcast::Sender<String>) {
     let scene_signal = EventSignal::Scene(scene.clone());
     let scene_json = serde_json::to_string(&scene_signal).unwrap();
     let _ = broadcast.send(format!("{}\n", scene_json));
 }
-
-async fn end_game(session: Arc<Mutex<GameSession>>, sender: Sender<String>) {}
 
 async fn send_server_msg(msg: String, broadcast: &broadcast::Sender<String>) {
     let msg = ChatMessage {
