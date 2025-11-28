@@ -91,7 +91,7 @@ impl GameSession {
             GameEvent::PlayerAnswer { username, answer } => {
                 let scene = match &self.current_scene_state {
                     GameSceneState::Normal(scene) => scene,
-                    _ => return UpdateResult::Continue,
+                    _ => return UpdateResult::Continue(None),
                 };
 
                 // verifica acerto individual
@@ -104,7 +104,7 @@ impl GameSession {
 
                 // se ainda falta jogador responder, nada acontece
                 if self.answers.len() < self.party.len() {
-                    return UpdateResult::Continue;
+                    return UpdateResult::Continue(Some(answer));
                 }
 
                 // TODOS responderam -> aplicar maioria
@@ -136,7 +136,7 @@ impl GameSession {
                 count_result.push_str(&text_result);
                 UpdateResult::Advance(count_result)
             }
-            GameEvent::PlayerJoined(_) => UpdateResult::Continue,
+            GameEvent::PlayerJoined(_) => UpdateResult::Continue(None),
         }
     }
 

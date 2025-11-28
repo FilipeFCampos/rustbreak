@@ -71,7 +71,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         msg.timestamp, msg.username, msg.content
                     ),
                     MessageType::SystemNotification => {
-                        format!("\n[{}: {}]\n", msg.username, msg.content)
+                        format!("\n[{}]\n", msg.content)
                     }
                 };
 

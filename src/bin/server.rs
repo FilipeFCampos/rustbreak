@@ -70,7 +70,7 @@ async fn handle_connection(
     let mut username = String::new();
     // temos esses quatro dados primordiais
     let mut party_id: Option<Uuid> = None; // auto-explicativo, eh o id da sessão a qual o usuário pertence;
-                                            // antes era mais útil, talvez possamos tirar
+    // antes era mais útil, talvez possamos tirar
     let mut broadcast: Option<broadcast::Receiver<String>> = None; // canal de comunicação do servidor para todos os jogadores
     let mut event_channel: Option<mpsc::Sender<GameEvent>> = None; // canal que possibilita o isolamento entre handle_connection e game_loop
     // com essa queue, handle_connection consegue empilhar eventos daquela sessão que serão lidos paralelamente pelo game_loop
@@ -95,8 +95,8 @@ async fn handle_connection(
         }
 
         // fazendo aqui o shadowing
-        let username = username.trim().to_string();
-        if username.is_empty() {
+        let username_trim = username.trim().to_string();
+        if username_trim.is_empty() {
             continue;
         }
 
@@ -203,6 +203,7 @@ async fn handle_connection(
             }
             return;
         }
+        username = username_trim.to_string();
 
         break;
     }
@@ -259,21 +260,15 @@ async fn handle_connection(
     {
         if let Some(entry) = sessions.lock().await.get_mut(&party_id) {
             entry.session.lock().await.remove_player(&username);
+
+            let leave_msg = format!("{} deixou o chat!", username);
+            send_server_msg(leave_msg, &entry.broadcast).await;
         }
-
-        let leave_msg = ChatMessage {
-            username: username.clone(),
-            content: "left the chat".into(),
-            timestamp: get_time(),
-            message_type: MessageType::SystemNotification,
-        };
-
-        let leave_json = serde_json::to_string(&leave_msg).unwrap();
-        broadcast_message(leave_json, party_id, &sessions).await;
 
         println!(
             "├─[{}] {YELLOW}'{}' disconnected.{RESET}",
-            leave_msg.timestamp, username
+            get_time(),
+            username
         );
     }
 }
@@ -302,34 +297,20 @@ async fn game_loop(
             // fiz isso porque agora a thread do game_loop é iniciada diretamente ao criar uma sessão nova,
             // aí pra não deixar ela rodando com só 1 player eu coloquei essa barreira.
             GameEvent::PlayerJoined(player) => {
-                let join_msg = ChatMessage {
-                    username: player.clone(),
-                    content: "joined the chat!".into(),
-                    timestamp: get_time(),
-                    message_type: MessageType::SystemNotification,
-                };
-
-                let join_json = serde_json::to_string(&join_msg).unwrap();
-                let _ = broadcast_channel.send(format!("{}\n", join_json));
+                let join_msg = format!("{} entrou no chat!", player);
+                send_server_msg(join_msg, &broadcast_channel).await;
 
                 println!(
                     "├─[{}] {GREEN}'{}' joined the chat!{RESET}",
-                    join_msg.timestamp, player
+                    get_time(),
+                    player
                 );
 
                 let mut s = session.lock().await;
                 if s.party.len() == 3 {
                     s.begin_game();
 
-                    let start_msg = ChatMessage {
-                        username: SYSTEM_NAME.into(),
-                        content: "Aventura iniciada...".into(),
-                        timestamp: get_time(),
-                        message_type: MessageType::SystemNotification,
-                    };
-
-                    let json = serde_json::to_string(&start_msg).unwrap();
-                    let _ = broadcast_channel.send(format!("{}\n", json));
+                    send_server_msg("Aventura iniciada...".into(), &broadcast_channel).await;
 
                     // TODO: mudar pra ser Prelude
                     if let GameSceneState::Normal(scene) = &s.current_scene_state {
@@ -342,34 +323,27 @@ async fn game_loop(
             }
             GameEvent::PlayerAnswer { username, answer } => {
                 let mut s = session.lock().await;
-                match s.update(GameEvent::PlayerAnswer { username, answer }) {
+                match s.update(GameEvent::PlayerAnswer {
+                    username: username.clone(),
+                    answer,
+                }) {
                     UpdateResult::Advance(feedback) => {
-                        let msg = ChatMessage {
-                            username: SYSTEM_NAME.into(),
-                            content: feedback,
-                            timestamp: get_time(),
-                            message_type: MessageType::SystemNotification,
-                        };
-
-                        let json = serde_json::to_string(&msg).unwrap();
-                        let _ = broadcast_channel.send(format!("{}\n", json));
+                        send_server_msg(feedback, &broadcast_channel).await;
                         // TODO: Avançar turno
                     }
-                    UpdateResult::Continue => {
-                        // Não faz nada kkkk
+                    UpdateResult::Continue(Some(answer)) => {
+                        send_server_msg(
+                            format!("{} escolheu a resposta {} \n", username, answer),
+                            &broadcast_channel,
+                        )
+                        .await;
                     }
+                    UpdateResult::Continue(None) => {}
                     UpdateResult::EndGame => {
                         let end_game_msg = "Andando pelos corredores do IMD, vocês recebem uma notificação no terminal. Quando o abrem, leem a seguinte mensagem: \n 'Caros ajudantes, vocês se provaram ineficientes para a tarefa a qual lhes foi passada. Infelizmente, lhes falta conhecimento do nosso sistema para que consigam nos ajudar. Desejo que prosperem no seu desenvolvimento enquanto programadores e em outra vida sejam capazes de me ajudar. \nCrab Guardian'. Vocês saem cabisbaixos pela entrada do IMD sabendo que falharam na missão, esperando que outras pessoas mais experientes sejam capazes de consertar este caos.".into();
-                        let final_msg = ChatMessage {
-                            username: SYSTEM_NAME.into(),
-                            content: end_game_msg,
-                            timestamp: get_time(),
-                            message_type: MessageType::SystemNotification,
-                        };
-                        let final_msg = serde_json::to_string(&final_msg).unwrap();
-                        let _ = broadcast_channel.send(final_msg);
+                        send_server_msg(end_game_msg, &broadcast_channel).await;
 
-                        let shutdown_signal= EventSignal::Shutdown;
+                        let shutdown_signal = EventSignal::Shutdown;
                         let json = serde_json::to_string(&shutdown_signal).unwrap();
                         let _ = broadcast_channel.send(json);
                         break;
@@ -381,3 +355,26 @@ async fn game_loop(
 }
 
 async fn end_game(session: Arc<Mutex<GameSession>>, sender: Sender<String>) {}
+
+async fn send_server_msg(msg: String, broadcast: &broadcast::Sender<String>) {
+    let msg = ChatMessage {
+        username: SYSTEM_NAME.into(),
+        content: msg,
+        timestamp: get_time(),
+        message_type: MessageType::SystemNotification,
+    };
+    let msg = serde_json::to_string(&msg).unwrap();
+    let _ = broadcast.send(msg);
+}
+
+async fn send_user_msg(username: &String, msg: String, broadcast: &broadcast::Sender<String>) {
+    let msg = ChatMessage {
+        username: username.clone(),
+        content: msg,
+        timestamp: get_time(),
+        message_type: MessageType::UserMessage,
+    };
+
+    let msg = serde_json::to_string(&msg).unwrap();
+    let _ = broadcast.send(msg);
+}
