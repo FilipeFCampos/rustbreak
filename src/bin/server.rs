@@ -4,7 +4,7 @@ use rustbreak::common::{
     messages::{ChatMessage, EventSignal, MessageType},
     shared::*,
 };
-use rustbreak::game::game_scene::GameSceneState;
+use rustbreak::game::game_scene::{GameScene, GameSceneState};
 use rustbreak::game::game_session::{
     GameEvent, GameSession, UpdateResult, MAX_PLAYERS_PER_SESSION,
 };
@@ -141,12 +141,14 @@ async fn handle_connection(
                             Ok(_) => {
                                 let receiver = broadcast_sender.subscribe();
                                 drop(session_lock);
+                                let e = event_sender.clone();
 
                                 tokio::spawn(
                                     async move {
                                         game_loop(
                                             new_session.clone(),
                                             broadcast_sender.clone(),
+                                            e,
                                             event_receiver,
                                         )
                                     }
@@ -288,6 +290,7 @@ async fn broadcast_message(msg: String, party_id: Uuid, sessions: &ServerSession
 async fn game_loop(
     session: Arc<Mutex<GameSession>>,
     broadcast_channel: broadcast::Sender<String>,
+    event_channel: mpsc::Sender<GameEvent>,
     mut event_receiver: mpsc::Receiver<GameEvent>,
 ) {
     while let Some(event) = event_receiver.recv().await {
@@ -314,9 +317,7 @@ async fn game_loop(
 
                     // TODO: mudar pra ser Prelude
                     if let GameSceneState::Normal(scene) = &s.current_scene_state {
-                        let scene_signal = EventSignal::Scene(scene.clone());
-                        let scene_json = serde_json::to_string(&scene_signal).unwrap();
-                        let _ = broadcast_channel.send(format!("{}\n", scene_json));
+                        emit_scene_signal(&scene, &broadcast_channel).await;
                     }
                 }
                 drop(s);
@@ -329,7 +330,7 @@ async fn game_loop(
                 }) {
                     UpdateResult::Advance(feedback) => {
                         send_server_msg(feedback, &broadcast_channel).await;
-                        // TODO: Avançar turno
+                        let _ = event_channel.send(GameEvent::AdvanceTurn).await;
                     }
                     UpdateResult::Continue(Some(answer)) => {
                         send_server_msg(
@@ -339,7 +340,7 @@ async fn game_loop(
                         .await;
                     }
                     UpdateResult::Continue(None) => {}
-                    UpdateResult::EndGame => {
+                    UpdateResult::GameOver => {
                         let end_game_msg = "Andando pelos corredores do IMD, vocês recebem uma notificação no terminal. Quando o abrem, leem a seguinte mensagem: \n 'Caros ajudantes, vocês se provaram ineficientes para a tarefa a qual lhes foi passada. Infelizmente, lhes falta conhecimento do nosso sistema para que consigam nos ajudar. Desejo que prosperem no seu desenvolvimento enquanto programadores e em outra vida sejam capazes de me ajudar. \nCrab Guardian'. Vocês saem cabisbaixos pela entrada do IMD sabendo que falharam na missão, esperando que outras pessoas mais experientes sejam capazes de consertar este caos.".into();
                         send_server_msg(end_game_msg, &broadcast_channel).await;
 
@@ -350,8 +351,22 @@ async fn game_loop(
                     }
                 }
             }
+            GameEvent::AdvanceTurn => {
+                let mut s = session.lock().await;
+                s.next_scene();
+                if let GameSceneState::Normal(scene) = &s.current_scene_state {
+                    emit_scene_signal(scene, &broadcast_channel).await;
+                }
+                drop(s);
+            }
         }
     }
+}
+
+async fn emit_scene_signal(scene: &GameScene, broadcast: &broadcast::Sender<String>) {
+    let scene_signal = EventSignal::Scene(scene.clone());
+    let scene_json = serde_json::to_string(&scene_signal).unwrap();
+    let _ = broadcast.send(format!("{}\n", scene_json));
 }
 
 async fn end_game(session: Arc<Mutex<GameSession>>, sender: Sender<String>) {}

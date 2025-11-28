@@ -1,6 +1,6 @@
 use crate::game::game_scene::{GameScene, GameSceneState};
 use crate::game::player::Player;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
@@ -17,12 +17,13 @@ pub enum GameTurn {
 pub enum GameEvent {
     PlayerJoined(String),
     PlayerAnswer { username: String, answer: String },
+    AdvanceTurn,
 }
 
 pub enum UpdateResult {
     Advance(String),
-    Continue,
-    EndGame,
+    Continue(Option<String>),
+    GameOver,
 }
 
 #[derive(Clone)]
@@ -31,12 +32,9 @@ pub struct GameSession {
     pub current_scene_state: GameSceneState,
     pub current_turn: GameTurn,
     pub party: HashSet<Player>,
-    // NOVO: agora rastreamos respostas dos jogadores
-    // String -> username, bool -> acertou(true) / errou(false)
-    // Isso permite aplicar a regra “se 2 acertarem, sucesso; se 2 errarem, erro”
-    pub answers: HashMap<String, bool>,
-    pub remaining_answers: i8,
-    remaining_scenes: Vec<String>,
+    answers: HashMap<String, bool>,
+    remaining_answers: i8,
+    remaining_scenes: VecDeque<String>,
 }
 
 impl GameSession {
@@ -56,7 +54,8 @@ impl GameSession {
                 "scene_5".into(),
                 "scene_6".into(),
                 "scene_7".into(),
-            ],
+            ]
+            .into(),
         }
     }
 
@@ -125,7 +124,7 @@ impl GameSession {
 
                 // Se acabou a quantidade de tentativas então acaba o jogo!
                 if self.remaining_answers <= 0 {
-                    return UpdateResult::EndGame;
+                    return UpdateResult::GameOver;
                 }
 
                 let mut count_result = format!(
@@ -137,6 +136,16 @@ impl GameSession {
                 UpdateResult::Advance(count_result)
             }
             GameEvent::PlayerJoined(_) => UpdateResult::Continue(None),
+            _ => UpdateResult::Continue(None),
+        }
+    }
+
+    pub fn next_scene(&mut self) {
+        match self.remaining_scenes.pop_front() {
+            None => {}
+            Some(scene) => {
+                let _ = self.load_scene(scene.as_str());
+            }
         }
     }
 
@@ -150,7 +159,7 @@ impl GameSession {
     fn load_scene(&mut self, path: &str) -> Result<(), &'static str> {
         let mut full_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         full_path.push("data");
-        full_path.push(path);
+        full_path.push(format!("{}.json", path));
 
         let file = File::open(&full_path).map_err(|_| "Failed to load scene.")?;
         let reader = BufReader::new(file);
@@ -169,11 +178,13 @@ impl GameSession {
     }
 
     pub fn begin_game(&mut self) {
-        self.current_scene_state = GameSceneState::Prelude;
-        if let Err(_) = self.load_scene("scene_1.json") {
-            println!("Error loading initial scene.");
-        } else {
-            println!("Initial scene loaded successfully!");
+        if let Some(scene) = self.remaining_scenes.pop_front() {
+            let res = self.load_scene(scene.as_str());
+            if res.is_err() {
+                println!("Error loading initial scene.");
+            } else {
+                println!("Initial scene loaded successfully!");
+            }
         }
 
         self.current_turn = GameTurn::Server;
