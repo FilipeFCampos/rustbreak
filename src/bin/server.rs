@@ -137,7 +137,7 @@ async fn handle_connection(
 
                         // adiciona jogador numa session agora protegida por Mutex
                         let mut session_lock = entry.session.lock().await;
-                        match session_lock.add_player(&username) {
+                        match session_lock.add_player(&username_trim) {
                             Ok(_) => {
                                 let receiver = broadcast_sender.subscribe();
                                 drop(session_lock);
@@ -161,7 +161,7 @@ async fn handle_connection(
                     Some(available_session) => {
                         let entry = sessions.get_mut(&available_session).unwrap();
                         let mut session_lock = entry.session.lock().await;
-                        match session_lock.add_player(&username) {
+                        match session_lock.add_player(&username_trim) {
                             Ok(_) => Ok((
                                 session_lock.id,
                                 entry.broadcast.subscribe(),
