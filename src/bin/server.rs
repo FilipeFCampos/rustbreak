@@ -19,6 +19,7 @@ use tokio::{
     sync::{broadcast, Mutex},
 };
 use uuid::Uuid;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -75,13 +76,15 @@ async fn handle_connection(
     let mut broadcast_sender: Option<broadcast::Sender<String>> = None;
     let mut event_sender: Option<mpsc::Sender<GameEvent>> = None; // canal que possibilita o isolamento entre handle_connection e game_loop
     // com essa queue, handle_connection consegue empilhar eventos daquela sessão que serão lidos paralelamente pelo game_loop
-    let mut event_receiver: Option<mpsc::Receiver<GameEvent>> = None;
+    let mut event_receiver: Option<mpsc::Receiver<GameEvent>> = None;let mut chat_lock: Option<Arc<AtomicBool>> = None;
     // enquanto o event_channel permite o handle_connection empilhar, o event_receiver é justamente o observador do game_loop
     // dessa ação, desempilhando as ações e podendo tomar decisões
 
     // seguir essa ideia é interessante para manter um isolamento bem massa entre as duas funções, pois antes estava aglutinado
     // e dificultava muito de tentar fazer alguma coisa. espero que se prove uma técnica legal kkkkkkk
 
+    let mut chat_lock: Option<Arc<AtomicBool>> = None;
+    
     // LOGIN + REGISTRO DO PLAYER
     loop {
         username.clear();
@@ -120,13 +123,17 @@ async fn handle_connection(
                     broadcast::Sender<String>,
                     broadcast::Receiver<String>,
                     mpsc::Sender<GameEvent>,
+                    Arc<AtomicBool>,
                 ),
                 String,
             > = match available_id {
-                // não tem party !!
+                // Criando nova sessão
                 None => {
                     let (broadcast_sender, broadcast_receiver) = broadcast::channel::<String>(128);
                     let (event_sender, event_receiver) = mpsc::channel::<GameEvent>(128);
+
+                    // false = destravado
+                    let chat_lock = Arc::new(AtomicBool::new(false));
 
                     let new_session = Arc::new(Mutex::new(GameSession::new()));
                     let party_id = new_session.lock().await.id;
@@ -137,6 +144,7 @@ async fn handle_connection(
                             new_session.clone(),
                             broadcast_sender.clone(),
                             event_sender.clone(),
+                            chat_lock.clone(),
                         ),
                     );
 
@@ -149,6 +157,7 @@ async fn handle_connection(
                             drop(session_lock);
                             let event_clone = event_sender.clone();
                             let broadcast_clone = broadcast_sender.clone();
+                            let chat_lock_clone = chat_lock.clone();
 
                             tokio::spawn(
                                 async move {
@@ -157,11 +166,12 @@ async fn handle_connection(
                                         broadcast_sender.clone(),
                                         event_clone,
                                         event_receiver,
+                                        chat_lock_clone,
                                     )
                                 }
                                 .await,
                             );
-                            Ok((party_id, broadcast_clone, broadcast_receiver, event_sender))
+                            Ok((party_id, broadcast_clone, broadcast_receiver, event_sender, chat_lock))
                         }
                         Err(err) => Err(err),
                     }
@@ -176,6 +186,7 @@ async fn handle_connection(
                             entry.broadcast.clone(),
                             entry.broadcast.subscribe(),
                             entry.event_channel.clone(),
+                            entry.chat_lock.clone(),
                         )),
                         Err(err) => Err(err),
                     }
@@ -183,11 +194,12 @@ async fn handle_connection(
             };
 
             match res {
-                Ok((id, b_sender, b_receiver, e_sender)) => {
+                Ok((id, b_sender, b_receiver, e_sender, lock)) => {
                     party_id = Some(id);
                     broadcast_sender = Some(b_sender);
                     broadcast_receiver = Some(b_receiver);
                     event_sender = Some(e_sender);
+                    chat_lock = Some(lock);
                 }
                 Err(err) => {
                     let error_signal = EventSignal::Error(err.clone());
@@ -224,6 +236,8 @@ async fn handle_connection(
     assert!(event_sender.is_some());
     assert!(broadcast_sender.is_some());
     assert!(broadcast_receiver.is_some());
+    assert!(chat_lock.is_some());
+    let chat_lock = chat_lock.unwrap();
     let party_id = party_id.unwrap();
     let event_channel = event_sender.unwrap();
     let broadcast_sender = broadcast_sender.unwrap();
@@ -265,6 +279,19 @@ async fn handle_connection(
                     continue;
                 }
                 else {
+                    // Se estiver TRUE (Bloqueado)
+                    if chat_lock.load(Ordering::Relaxed) {
+                        let silence_msg = ChatMessage {
+                            username: "ERROR".to_string(), 
+                            content: "🤫 Shhh! O narrador está falando... Aguarde.".to_string(),
+                            timestamp: get_time(),
+                            message_type: MessageType::SystemNotification,
+                        };
+                        let json = serde_json::to_string(&silence_msg).unwrap();
+                        let _ = writer.write_all(json.as_bytes()).await;
+                        let _ = writer.write_all(b"\n").await;
+                        continue; // <--- IMPEDE O ENVIO
+                    }
                     send_user_msg(&username, content.clone(), &broadcast_sender).await;
                 }
             }
@@ -300,6 +327,7 @@ async fn game_loop(
     broadcast_channel: broadcast::Sender<String>,
     event_channel: mpsc::Sender<GameEvent>,
     mut event_receiver: mpsc::Receiver<GameEvent>,
+    chat_lock: Arc<AtomicBool>,
 ) {
     while let Some(event) = event_receiver.recv().await {
         match event {
@@ -325,7 +353,7 @@ async fn game_loop(
 
                     // TODO: mudar pra ser Prelude
                     if let GameSceneState::Normal(scene) = &s.current_scene_state {
-                        emit_scene_signal(&scene, &broadcast_channel).await;
+                        emit_scene_signal(&scene, &broadcast_channel, &chat_lock).await;
                     }
                 }
                 drop(s);
@@ -359,7 +387,7 @@ async fn game_loop(
                 let mut s = session.lock().await;
                 s.next_scene();
                 if let GameSceneState::Normal(scene) = &s.current_scene_state {
-                    emit_scene_signal(scene, &broadcast_channel).await;
+                    emit_scene_signal(scene, &broadcast_channel, &chat_lock).await;
                 }
                 drop(s);
             }
@@ -379,10 +407,36 @@ async fn game_over(error_msg_scene: String, broadcast: &broadcast::Sender<String
     let _ = broadcast.send(json);
 }
 
-async fn emit_scene_signal(scene: &GameScene, broadcast: &broadcast::Sender<String>) {
+async fn emit_scene_signal(
+    scene: &GameScene, 
+    broadcast: &broadcast::Sender<String>, 
+    chat_lock: &Arc<AtomicBool>,
+) {
+    chat_lock.store(true, Ordering::SeqCst);
+    println!("🔒 CHAT BLOQUEADO! (Lock set to TRUE)");
+
     let scene_signal = EventSignal::Scene(scene.clone());
     let scene_json = serde_json::to_string(&scene_signal).unwrap();
     let _ = broadcast.send(format!("{}\n", scene_json));
+
+    // CONSTANTES DE TEMPO
+    const MS_PER_CHAR: u64 = 30;  // Velocidade de "leitura"
+    const BUFFER_MS: u64 = 1000;  // Margem de segurança extra
+
+    // Calculando o tempo (30ms por char + 1s de margem)
+    let text_len = scene.description.len() as u64;
+    let delay_ms = (text_len * MS_PER_CHAR) + BUFFER_MS;
+
+    let lock_clone = chat_lock.clone();
+    let scene_id = scene.id; 
+
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+        
+        // Desbloqueia
+        lock_clone.store(false, Ordering::SeqCst);
+        println!("Chat liberado para a cena ID {}", scene_id);
+    });
 }
 
 async fn send_server_msg(msg: String, broadcast: &broadcast::Sender<String>) {
