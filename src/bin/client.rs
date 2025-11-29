@@ -185,7 +185,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         // The connection dropped, so let’s notify the graphical interface (Cursive) to close.
         let _ = sink.send(Box::new(|siv: &mut Cursive| {
-            siv.quit();
+            siv.add_layer(
+                Dialog::text("A conexão com o servidor foi encerrada. \n(O servidor pode ter sido desligado ou reiniciado)")
+                    .title("Desconectado")
+                    .button("Sair", |s| s.quit())
+            );
         }));
     });
 
