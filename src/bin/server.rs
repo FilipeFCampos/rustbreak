@@ -244,8 +244,8 @@ async fn handle_connection(
 
                 if content.starts_with("/answer ") {
                     let answer = content["/answer ".len()..].trim().to_string();
-                    let valid_options = ["a", "b", "c", "d"];
-                    if !valid_options.contains(&answer.to_lowercase().as_str()) {
+                    const VALID_OPTIONS: [&str; 4] = ["a", "b", "c", "d"];
+                    if !VALID_OPTIONS.contains(&answer.to_lowercase().as_str()) {
                         let error_msg = ChatMessage {
                             username: "ERROR".to_string(),
                             content: format!("Alternativa '{}' inválida! Por favor responda com A, B, C ou D.", answer),
