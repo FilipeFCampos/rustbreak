@@ -324,8 +324,9 @@ async fn game_loop(
                         let _ = event_channel.send(GameEvent::AdvanceTurn).await;
                     }
                     UpdateResult::Continue(Some(answer)) => {
+                        // TODO: tratar/ignorar se a resposta não for a, b, c ou d
                         send_server_msg(
-                            format!("{} escolheu a resposta {} \n", username, answer),
+                            format!("{} escolheu a resposta {}", username, answer),
                             &broadcast_channel,
                         )
                         .await;
