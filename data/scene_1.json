@@ -1,7 +1,7 @@
 {
   "id": 1,
   "description": "Vocês chegam até a recepção do IMD, mas há algo estranho: as conversas de 2 segundos atrás estão se iniciando novamente, as mesmas pessoas caminham indefinidamente. O tempo parece... preso. Vocês olham para o terminal e pensam, 'o que pode estar causando isso?'",
-  "code": "fn simular_corredor(){let mut x : u8 = 0;while x < 1000 {renderizar_corredor();x += 1;}}",
+  "code": "fn simular_corredor(){\n\tlet mut x : u8 = 0;\n\twhile x < 1000 {\n\t\trenderizar_corredor();\n\t\tx += 1;\n\t}\n}",
   "options": {
     "a": "Inclusão do ; na linha \"x + 1\", tornando a expressão um comando simples",
     "b": "A mutabilidade do x faz com que os eventos reiniciem",
