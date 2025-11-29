@@ -3,6 +3,8 @@ use cursive::{
     views::{EditView, TextView},
     Cursive,
 };
+use cursive::theme::{BaseColor, Color, Effect, Style};
+use cursive::utils::markup::StyledString;
 use rustbreak::frontend::tui;
 use rustbreak::{
     client::{
@@ -66,12 +68,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
             // The received message json object is converted back to a `ChatMessage`
             if let Ok(msg) = serde_json::from_str::<ChatMessage>(&line) {
                 let formatted_msg = match msg.message_type {
-                    MessageType::UserMessage => format!(
-                        "┌─[{}]\n└─ {} => {}\n",
-                        msg.timestamp, msg.username, msg.content
-                    ),
+                    MessageType::UserMessage => {
+                        StyledString::plain(format!(
+                            "┌─[{}]\n└─ {} => {}\n",
+                            msg.timestamp, msg.username, msg.content
+                        ))
+                    },
                     MessageType::SystemNotification => {
-                        format!("\n[{}]\n", msg.content)
+                        if msg.username == "ERROR" {
+                            StyledString::styled(
+                                format!("\n[ERROR: {}]\n", msg.content),
+                                Style::from(Color::Dark(BaseColor::Red)).combine(Effect::Bold)
+                            )
+                        } else {
+                            StyledString::plain(format!("\n[{}]\n", msg.content))
+                        }
                     }
                 };
 
