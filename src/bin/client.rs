@@ -1,21 +1,26 @@
+use cursive::views::Dialog;
 use cursive::{
+    views::{EditView, TextView},
     Cursive,
-    views::{EditView, NamedView, ScrollView, TextView},
 };
+use rustbreak::frontend::tui;
 use rustbreak::{
+    client::{
+        add_scroll_callbacks, check_scroll_position, enable_auto_scroll, scroll_to_bottom,
+        ScrollState,
+    },
     common::{
         formatting::*,
         messages::{ChatMessage, EventSignal, MessageType},
         shared::*,
     },
     frontend::tui::make_header,
-    client::{ScrollState, add_scroll_callbacks, scroll_to_bottom, check_scroll_position, enable_auto_scroll}
 };
-use rustbreak::frontend::tui;
+use std::time::Duration;
 use std::{error::Error, sync::Arc};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    net::{TcpStream, tcp::OwnedWriteHalf},
+    net::{tcp::OwnedWriteHalf, TcpStream},
     sync::Mutex,
 };
 
@@ -66,10 +71,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         msg.timestamp, msg.username, msg.content
                     ),
                     MessageType::SystemNotification => {
-                        format!("\n[{}: {}]\n", msg.username, msg.content)
+                        format!("\n[{}]\n", msg.content)
                     }
                 };
-                
+
                 // This writes the message in the chat
                 if sink
                     .send(Box::new(move |siv: &mut Cursive| {
@@ -96,8 +101,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             // P.s. the next 20 lines of code were incredibly painful to come up with
             // Please remember to take a break and drink some water!
             // Because I did not.
-            }  
-            else if let Ok(signal) = serde_json::from_str::<EventSignal>(&line) {
+            } else if let Ok(signal) = serde_json::from_str::<EventSignal>(&line) {
                 match signal {
                     EventSignal::Error(error_msg) => {
                         let _ = sink.send(Box::new(move |siv: &mut Cursive| {
@@ -105,10 +109,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             // Error Popup
                             siv.add_layer(
                                 cursive::views::Dialog::text(error_msg)
-                                    .title("Erro de Login")
-                                    .button("Tentar Novamente", |s| {
+                                    .title("Login Error")
+                                    .button("Try Again", |s| {
                                         s.pop_layer();
-                                    })
+                                    }),
                             );
                         }));
                     }
@@ -121,6 +125,49 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             });
                         }))
                         .unwrap(),
+
+                    EventSignal::Scene(scene) => {
+                        let description = scene.description.clone();
+                        let code = scene.code.clone();
+
+                        let formatted_scene = format!(
+                            "\n=== Scene {} ===\n\n{}\n\nCódigo:\n{}\n\nOpções:\nA) {}\nB) {}\nC) {}\nD) {}\n",
+                            scene.id,
+                            description,
+                            code,
+                            scene.options.a,
+                            scene.options.b,
+                            scene.options.c,
+                            scene.options.d
+                        );
+
+                        let _ = sink.send(Box::new(move |siv: &mut Cursive| {
+                            // Shows scene in chat
+                            siv.call_on_name("messages", |view: &mut TextView| {
+                                view.append(formatted_scene);
+                            });
+
+                            scroll_to_bottom(siv);
+                        }));
+                    }
+                    EventSignal::Shutdown => {
+                        // TODO: está acontecendo algum panic! ao finalizar, consegui ver pelo debug. Não está impactando
+                        // nas outras partidas, mas é algo estranho
+
+                        // primeiro exibe uma mensagem de finalização e depois realmente quita.
+                        let _ = sink
+                            .send(Box::new(|siv: &mut Cursive| {
+                                siv.add_layer(Dialog::info("Fim de Jogo!"));
+
+                                let cb = siv.cb_sink().clone();
+
+                                tokio::spawn(async move {
+                                    tokio::time::sleep(Duration::from_secs(5)).await;
+                                    cb.send(Box::new(|s| s.quit())).unwrap();
+                                });
+                            }))
+                            .unwrap();
+                    }
                 }
             }
         }
@@ -188,7 +235,7 @@ fn send_message(siv: &mut Cursive, msg: String) {
             return;
         }
         "/scrolloff" => {
-            check_scroll_position(siv); 
+            check_scroll_position(siv);
             siv.call_on_name("messages", |view: &mut TextView| {
                 view.append("\n[Auto-scroll disabled]\n");
             });

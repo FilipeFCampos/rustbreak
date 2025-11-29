@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-
+use crate::game::game_scene::GameScene;
 /// Represents a message sent to the chat.
 ///
 /// ### Fields
@@ -32,8 +32,10 @@ pub enum MessageType {
 /// ### Types
 /// - `Error(String)`: An error event with associated data;
 /// - `Ok(String)`: A success event with associated data.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub enum EventSignal {
-    Error(String),
     Ok(String),
+    Error(String),
+    Scene(GameScene),
+    Shutdown,
 }
