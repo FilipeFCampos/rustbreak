@@ -1,6 +1,6 @@
 use cursive::views::Dialog;
 use cursive::{
-    views::{EditView, TextView},
+    views::{EditView, TextView, NamedView, ScrollView, EnableableView},
     Cursive,
 };
 use cursive::theme::{BaseColor, Color, Effect, Style};
@@ -159,6 +159,34 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             });
 
                             scroll_to_bottom(siv);
+
+                            // Calcula o tempo de bloqueio (30ms/char + 1s buffer)
+                            const MS_PER_CHAR: u64 = 30;
+                            const BUFFER_MS: u64 = 1000;
+
+                            let text_len = description.len() as u64;
+                            let delay_ms = (text_len * MS_PER_CHAR) + BUFFER_MS;
+
+                            // Desabilita o campo de chat_input
+                            siv.call_on_name("chat_input", |view: &mut EnableableView<EditView>| {
+                                view.disable();
+                                view.get_inner_mut().set_content("🔒 AGORA NÃO É HORA DE CONVERSAR...  ");
+                            });
+
+                            // Cria uma task para reabilitar após o tempo
+                            let cb_sink = siv.cb_sink().clone();
+                            tokio::spawn(async move {
+                                tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                                
+                                // Reabilita o campo de input
+                                cb_sink.send(Box::new(|s| {
+                                    s.call_on_name("chat_input", |view: &mut EnableableView<EditView>| {
+                                        view.enable();
+                                        view.get_inner_mut().set_content("");
+                                        // Opcional: view.get_inner_mut().take_focus();
+                                    });
+                                })).unwrap();
+                            });
                         }));
                     }
                     EventSignal::Shutdown => {
@@ -221,8 +249,9 @@ fn send_message(siv: &mut Cursive, msg: String) {
                     /scrolloff - Disable auto-scroll\n\n",
                 );
             });
-            siv.call_on_name("input", |view: &mut EditView| {
-                view.set_content("");
+            
+            siv.call_on_name("chat_input", |view: &mut EnableableView<EditView>| {
+                view.get_inner_mut().set_content("");
             });
             return;
         }
@@ -230,8 +259,9 @@ fn send_message(siv: &mut Cursive, msg: String) {
             siv.call_on_name("messages", |view: &mut TextView| {
                 view.set_content("");
             });
-            siv.call_on_name("input", |view: &mut EditView| {
-                view.set_content("");
+            
+            siv.call_on_name("chat_input", |view: &mut EnableableView<EditView>| {
+                view.get_inner_mut().set_content("");
             });
 
             if let Some(client_data) = siv.user_data::<ClientData>() {
@@ -244,8 +274,9 @@ fn send_message(siv: &mut Cursive, msg: String) {
             siv.call_on_name("messages", |view: &mut TextView| {
                 view.append("\n[Auto-scroll enabled]\n");
             });
-            siv.call_on_name("input", |view: &mut EditView| {
-                view.set_content("");
+            
+            siv.call_on_name("chat_input", |view: &mut EnableableView<EditView>| {
+                view.get_inner_mut().set_content("");
             });
             return;
         }
@@ -254,8 +285,9 @@ fn send_message(siv: &mut Cursive, msg: String) {
             siv.call_on_name("messages", |view: &mut TextView| {
                 view.append("\n[Auto-scroll disabled]\n");
             });
-            siv.call_on_name("input", |view: &mut EditView| {
-                view.set_content("");
+            
+            siv.call_on_name("chat_input", |view: &mut EnableableView<EditView>| {
+                view.get_inner_mut().set_content("");
             });
             return;
         }
@@ -277,7 +309,7 @@ fn send_message(siv: &mut Cursive, msg: String) {
         });
     }
 
-    siv.call_on_name("input", |view: &mut EditView| {
-        view.set_content("");
+    siv.call_on_name("chat_input", |view: &mut EnableableView<EditView>| {
+        view.get_inner_mut().set_content("");
     });
 }
