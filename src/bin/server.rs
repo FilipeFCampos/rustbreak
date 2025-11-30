@@ -319,16 +319,29 @@ async fn game_loop(
 
                 let mut s = session.lock().await;
                 if s.party.len() == MAX_PLAYERS_PER_SESSION && !s.has_started {
-                    s.begin_game();
-
                     send_server_msg("Aventura iniciada...".into(), &broadcast_channel).await;
 
-                    // TODO: mudar pra ser Prelude
-                    if let GameSceneState::Normal(scene) = &s.current_scene_state {
-                        emit_scene_signal(&scene, &broadcast_channel).await;
+                    if let GameSceneState::Prelude = s.current_scene_state {
+                        drop(s);
+                        let prelude_text = GameSession::get_prelude_text();
+                        let lines = prelude_text.lines().map(|l| l.to_string()).collect::<Vec<_>>();
+                        for line in lines {
+                            if !line.trim().is_empty() {
+                                send_server_msg(line, &broadcast_channel).await;
+                            }
+                            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                        }
+
+                        let mut s = session.lock().await;
+                        s.begin_game();
+                        if let GameSceneState::Normal(scene) = &s.current_scene_state {
+                            let scene_clone = scene.clone();
+                            drop(s);
+                            emit_scene_signal(&scene_clone, &broadcast_channel).await;
+                        }
+                        continue;
                     }
                 }
-                drop(s);
             }
             GameEvent::PlayerAnswer { username, answer } => {
                 let mut s = session.lock().await;
