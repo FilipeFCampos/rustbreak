@@ -4,8 +4,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
-use std::thread::sleep;
-use std::time::Duration;
+use chrono::Local;
 use uuid::Uuid;
 
 pub const MAX_PLAYERS_PER_SESSION: usize = 3;
@@ -168,6 +167,8 @@ impl GameSession {
     }
 
     pub fn get_prelude_text() -> String {
+        let current_date = Local::now().format("%d/%m/%Y %H:%M").to_string();
+        format!(
         r#"
 Iniciando conexão com quantum.imd.ufrn.br...
 Protocolo TELNET handshake... OK.
@@ -185,13 +186,13 @@ BEM-VINDOS, Investigadores.
 
 (A tela estabiliza novamente.)
 
-Data Estelar: [Data Atual]  
-Status do Sistema: **CRÍTICO**  
+Data Estelar: {}
+Status do Sistema: **CRÍTICO**
 Local: Instituto Metrópole Digital (IMD), UFRN.
 
 O orgulho do IMD, o supercomputador 'Potiguara-Q', foi ativado esta manhã. Escrito inteiramente em Rust para garantir segurança e performance quântica, ele era a promessa de uma nova era…
 
-Porém…
+Porém...
 
 A promessa falhou.
 
@@ -216,12 +217,12 @@ Enfim... O conhecimento, a discussão e o consenso são suas únicas armas.
 
 [STATUS DA SESSÃO: JOGADORES CONECTADOS: 3]
 
-[HOST]: O chat de vocês está aberto. Discutam.  
+O chat de vocês está aberto. Discutam.
 O Saguão espera.
-
-[HOST]: Boa sorte. Vocês vão precisar.
-"#
-        .into()
+Boa sorte. Vocês vão precisar.
+"#,
+            current_date
+        )
     }
 
     pub fn begin_game(&mut self) {
