@@ -2,7 +2,7 @@ use crate::game::game_session::{GameEvent, GameSession};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use tokio::sync::{broadcast, mpsc, Mutex};
+use tokio::sync::{Mutex, broadcast, mpsc};
 use uuid::Uuid;
 
 // MUDANÇA IMPORTANTE:
@@ -13,7 +13,6 @@ pub struct SessionEntry {
     pub session: Arc<Mutex<GameSession>>,
     pub broadcast: broadcast::Sender<String>,
     pub event_channel: mpsc::Sender<GameEvent>,
-    pub chat_lock: Arc<AtomicBool>,
 }
 
 impl SessionEntry {
@@ -21,13 +20,11 @@ impl SessionEntry {
         session: Arc<Mutex<GameSession>>,
         broadcast: broadcast::Sender<String>,
         event_channel: mpsc::Sender<GameEvent>,
-        chat_lock: Arc<AtomicBool>,
     ) -> Self {
         Self {
             session,
             broadcast,
             event_channel,
-            chat_lock,
         }
     }
 }

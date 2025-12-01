@@ -4,7 +4,9 @@ use cursive::{
     event::{Event, Key},
     theme::{BaseColor, Color, PaletteColor},
     traits::*,
-    views::{Dialog, DummyView, EditView, LinearLayout, Panel, ScrollView, TextView, EnableableView},
+    views::{
+        Dialog, DummyView, EditView, EnableableView, LinearLayout, Panel, ScrollView, TextView,
+    },
 };
 
 use crate::client::add_scroll_callbacks;
@@ -57,8 +59,7 @@ fn handle_chat(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
 
     // Input area
     let input = EnableableView::new(
-        EditView::new()
-            .on_submit(move |s, text| input_action(s, text.to_string()))
+        EditView::new().on_submit(move |s, text| input_action(s, text.to_string())),
     )
     .with_name("chat_input")
     .max_height(3)
@@ -123,7 +124,7 @@ fn handle_chat(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
                 view.get_inner_mut().set_content(chars.as_str());
             }
         });
-    }); 
+    });
 
     siv.add_global_callback(Event::CtrlChar('u'), |s| {
         s.call_on_name("chat_input", |view: &mut EnableableView<EditView>| {
@@ -131,7 +132,7 @@ fn handle_chat(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
                 view.get_inner_mut().set_content("");
             }
         });
-    }); 
+    });
 }
 
 /// Displays a popup to set the username.
