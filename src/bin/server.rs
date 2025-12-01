@@ -324,7 +324,10 @@ async fn game_loop(
                     if let GameSceneState::Prelude = s.current_scene_state {
                         drop(s);
                         let prelude_text = GameSession::get_prelude_text();
-                        let lines = prelude_text.lines().map(|l| l.to_string()).collect::<Vec<_>>();
+                        let lines = prelude_text
+                            .lines()
+                            .map(|l| l.to_string())
+                            .collect::<Vec<_>>();
                         for line in lines {
                             if !line.trim().is_empty() {
                                 send_server_msg(line, &broadcast_channel).await;
@@ -363,8 +366,14 @@ async fn game_loop(
                     }
                     UpdateResult::Continue(None) => {}
                     UpdateResult::GameOver(error_msg) => {
-                        game_over(error_msg, &broadcast_channel).await;
-                        break;
+                        let _ = event_channel
+                            .send(GameEvent::GameEnding(UpdateResult::GameOver(error_msg)))
+                            .await;
+                    }
+                    UpdateResult::EndGame(scene_msg) => {
+                        let _ = event_channel
+                            .send(GameEvent::GameEnding(UpdateResult::EndGame(scene_msg)))
+                            .await;
                     }
                 }
             }
@@ -376,16 +385,36 @@ async fn game_loop(
                 }
                 drop(s);
             }
+            GameEvent::GameEnding(result) => match result {
+                UpdateResult::GameOver(msg) => {
+                    game_over(msg, &broadcast_channel).await;
+                    break;
+                }
+                UpdateResult::EndGame(msg) => {
+                    end_game(msg, &broadcast_channel).await;
+                    break;
+                }
+                _ => {}
+            },
         }
     }
+}
+
+async fn end_game(scene_msg: String, broadcast: &broadcast::Sender<String>) {
+    send_server_msg(scene_msg, &broadcast).await;
+    tokio::time::sleep(Duration::from_secs(5)).await;
+
+    let shutdown_signal = EventSignal::Shutdown;
+    let json = serde_json::to_string(&shutdown_signal).unwrap();
+    let _ = broadcast.send(json);
 }
 
 async fn game_over(error_msg_scene: String, broadcast: &broadcast::Sender<String>) {
     send_server_msg(error_msg_scene, &broadcast).await;
     tokio::time::sleep(Duration::from_secs(2)).await;
 
-    let end_game_msg = "Andando pelos corredores do IMD, vocês recebem uma notificação no terminal. Quando o abrem, leem a seguinte mensagem: \n 'Caros ajudantes, vocês se provaram ineficientes para a tarefa a qual lhes foi passada. Infelizmente, lhes falta conhecimento do nosso sistema para que consigam nos ajudar. Desejo que prosperem no seu desenvolvimento enquanto programadores e em outra vida sejam capazes de me ajudar. \nCrab Guardian'. Vocês saem cabisbaixos pela entrada do IMD sabendo que falharam na missão, esperando que outras pessoas mais experientes sejam capazes de consertar este caos.".into();
-    send_server_msg(end_game_msg, &broadcast).await;
+    let game_over_msg = "Andando pelos corredores do IMD, vocês recebem uma notificação no terminal. Quando o abrem, leem a seguinte mensagem: \n 'Caros ajudantes, vocês se provaram ineficientes para a tarefa a qual lhes foi passada. Infelizmente, lhes falta conhecimento do nosso sistema para que consigam nos ajudar. Desejo que prosperem no seu desenvolvimento enquanto programadores e em outra vida sejam capazes de me ajudar. \nCrab Guardian'. Vocês saem cabisbaixos pela entrada do IMD sabendo que falharam na missão, esperando que outras pessoas mais experientes sejam capazes de consertar este caos.".into();
+    send_server_msg(game_over_msg, &broadcast).await;
 
     let shutdown_signal = EventSignal::Shutdown;
     let json = serde_json::to_string(&shutdown_signal).unwrap();

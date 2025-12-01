@@ -1,10 +1,10 @@
+use cursive::theme::{BaseColor, Color, Effect, Style};
+use cursive::utils::markup::StyledString;
 use cursive::views::Dialog;
 use cursive::{
     views::{EditView, TextView},
     Cursive,
 };
-use cursive::theme::{BaseColor, Color, Effect, Style};
-use cursive::utils::markup::StyledString;
 use rustbreak::frontend::tui;
 use rustbreak::{
     client::{
@@ -18,7 +18,6 @@ use rustbreak::{
     },
     frontend::tui::make_header,
 };
-use std::time::Duration;
 use std::{error::Error, sync::Arc};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -68,17 +67,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
             // The received message json object is converted back to a `ChatMessage`
             if let Ok(msg) = serde_json::from_str::<ChatMessage>(&line) {
                 let formatted_msg = match msg.message_type {
-                    MessageType::UserMessage => {
-                        StyledString::plain(format!(
-                            "┌─[{}]\n└─ {} => {}\n",
-                            msg.timestamp, msg.username, msg.content
-                        ))
-                    },
+                    MessageType::UserMessage => StyledString::plain(format!(
+                        "┌─[{}]\n└─ {} => {}\n",
+                        msg.timestamp, msg.username, msg.content
+                    )),
                     MessageType::SystemNotification => {
                         if msg.username == "ERROR" {
                             StyledString::styled(
                                 format!("\n[ERROR: {}]\n", msg.content),
-                                Style::from(Color::Dark(BaseColor::Red)).combine(Effect::Bold)
+                                Style::from(Color::Dark(BaseColor::Red)).combine(Effect::Bold),
                             )
                         } else {
                             StyledString::plain(format!("\n[{}]\n", msg.content))
@@ -168,14 +165,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         // primeiro exibe uma mensagem de finalização e depois realmente quita.
                         let _ = sink
                             .send(Box::new(|siv: &mut Cursive| {
-                                siv.add_layer(Dialog::info("Fim de Jogo!"));
+                                siv.add_layer(
+                                    Dialog::text("Agradecemos por ter jogado Rustbreak! ;p")
+                                        .title("Fim do Jogo")
+                                        .button("Sair", |s| s.quit()),
+                                );
 
                                 let cb = siv.cb_sink().clone();
-
-                                tokio::spawn(async move {
-                                    tokio::time::sleep(Duration::from_secs(5)).await;
-                                    cb.send(Box::new(|s| s.quit())).unwrap();
-                                });
                             }))
                             .unwrap();
                     }
