@@ -92,7 +92,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     MessageType::UserMessage => {
                         if sink
                             .send(Box::new(move |siv: &mut Cursive| {
-                                print_message(siv, formatted_msg);
+                                print_message(siv, formatted_msg.into_source());
                             }))
                             .is_err()
                         {
@@ -100,7 +100,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                     }
                     MessageType::SystemNotification => {
-                        for ch in formatted_msg.chars() {
+                        for ch in formatted_msg.into_source().chars() {
                             if sink
                                 .send(Box::new(move |siv: &mut Cursive| {
                                     print_message(siv, ch.to_string());
