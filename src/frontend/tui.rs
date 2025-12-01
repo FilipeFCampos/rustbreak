@@ -11,14 +11,14 @@ use crate::client::add_scroll_callbacks;
 
 // ... restante do código
 /// Builds the entire TUI by calling the necessary setup functions.
-/// 
+///
 /// ## Why use this?
 /// Calling the multiple setup functions individually in separate places can make some
 /// parts of the TUI run on different threads, which can lead to **unexpected behavior**.
 /// By using this function, you ensure that all parts of the TUI are available in the **same _tokio_ thread**,
 /// and allow changing screens by popping layers without losing any functionality. This function should
 /// be called **before** spawning a _tokio_ thread.
-/// 
+///
 /// ## How to use:
 /// Screen layers are organized in a stack **(LIFO)**, so the order on which each setup function is
 /// called matters. The username screen must be on top of the chat screen, so `set_username` must be
@@ -113,13 +113,13 @@ fn handle_chat(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
             chars.next();
             view.set_content(chars.as_str());
         });
-    }); 
+    });
 
     siv.add_global_callback(Event::CtrlChar('u'), |s| {
         s.call_on_name("input", |view: &mut EditView| {
             view.set_content("");
         });
-    }); 
+    });
 }
 
 /// Displays a popup to set the username.
@@ -129,10 +129,18 @@ fn handle_chat(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
 /// - `input_action`: Function to be run on input box submission.
 fn set_username(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
     let input = EditView::new()
-        .on_submit(move |s, text| input_action(s, text.to_string()))
-        .style(PaletteColor::Secondary)
-        .max_content_width(20)
-        .with_name("input");
+        .on_submit(move |s, text| {
+            let name = text.trim().to_string();
+            if name.is_empty() {
+                return;
+            }
+
+            // Send to the server
+            input_action(s, name);
+
+            s.add_layer(Dialog::text("Connecting to Potiguara-Q...").title("Please wait"));
+        })
+        .style(PaletteColor::Secondary);
 
     let message = TextView::new("Please type your username below.").with_name("message");
 
@@ -150,8 +158,9 @@ fn set_username(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
 
     siv.add_global_callback(Key::Esc, |s| s.quit());
 
-    let background = DummyView.full_screen();
-    siv.add_fullscreen_layer(background);
+    // It is not necessary
+    // let background = DummyView.full_screen();
+    // siv.add_fullscreen_layer(background);
 
     let popup = Dialog::around(layout)
         .title("Welcome to Rustbreak🦀")

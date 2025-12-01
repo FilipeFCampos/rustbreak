@@ -1,12 +1,15 @@
+use cursive::views::Dialog;
 use cursive::{
+    views::{EditView, TextView},
     Cursive,
-    views::{EditView, NamedView, ScrollView, TextView},
 };
+use cursive::theme::{BaseColor, Color, Effect, Style};
+use cursive::utils::markup::StyledString;
 use rustbreak::frontend::tui;
 use rustbreak::{
     client::{
-        ScrollState, add_scroll_callbacks, check_scroll_position, enable_auto_scroll,
-        scroll_to_bottom,
+        add_scroll_callbacks, check_scroll_position, enable_auto_scroll, scroll_to_bottom,
+        ScrollState,
     },
     common::{
         formatting::*,
@@ -18,7 +21,7 @@ use rustbreak::{
 use std::{error::Error, sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    net::{TcpStream, tcp::OwnedWriteHalf},
+    net::{tcp::OwnedWriteHalf, TcpStream},
     sync::Mutex,
 };
 
@@ -64,12 +67,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
             // The received message json object is converted back to a `ChatMessage`
             if let Ok(msg) = serde_json::from_str::<ChatMessage>(&line) {
                 let formatted_msg = match msg.message_type {
-                    MessageType::UserMessage => format!(
-                        "┌─[{}]\n└─ {} => {}\n",
-                        msg.timestamp, msg.username, msg.content
-                    ),
+                    MessageType::UserMessage => {
+                        StyledString::plain(format!(
+                            "┌─[{}]\n└─ {} => {}\n",
+                            msg.timestamp, msg.username, msg.content
+                        ))
+                    },
                     MessageType::SystemNotification => {
-                        format!("\n[{}: {}]\n", msg.username, msg.content)
+                        if msg.username == "ERROR" {
+                            StyledString::styled(
+                                format!("\n[ERROR: {}]\n", msg.content),
+                                Style::from(Color::Dark(BaseColor::Red)).combine(Effect::Bold)
+                            )
+                        } else {
+                            StyledString::plain(format!("\n[{}]\n", msg.content))
+                        }
                     }
                 };
 
@@ -106,9 +118,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
             // Because I did not.
             } else if let Ok(signal) = serde_json::from_str::<EventSignal>(&line) {
                 match signal {
-                    EventSignal::Error(_) => {
+                    EventSignal::Error(error_msg) => {
                         let _ = sink.send(Box::new(move |siv: &mut Cursive| {
-                            tui::error_popup(siv, "Username already taken.");
+                            siv.pop_layer();
+                            // Error Popup
+                            siv.add_layer(
+                                cursive::views::Dialog::text(error_msg)
+                                    .title("Login Error")
+                                    .button("Try Again", |s| {
+                                        s.pop_layer();
+                                    }),
+                            );
                         }));
                     }
                     EventSignal::Ok(name) => sink
@@ -120,13 +140,60 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             });
                         }))
                         .unwrap(),
+
+                    EventSignal::Scene(scene) => {
+                        let description = scene.description.clone();
+                        let code = scene.code.clone();
+
+                        let formatted_scene = format!(
+                            "\n=== Scene {} ===\n\n{}\n\nCódigo:\n{}\n\nOpções:\nA) {}\nB) {}\nC) {}\nD) {}\n",
+                            scene.id,
+                            description,
+                            code,
+                            scene.options.a,
+                            scene.options.b,
+                            scene.options.c,
+                            scene.options.d
+                        );
+
+                        let _ = sink.send(Box::new(move |siv: &mut Cursive| {
+                            // Shows scene in chat
+                            siv.call_on_name("messages", |view: &mut TextView| {
+                                view.append(formatted_scene);
+                            });
+
+                            scroll_to_bottom(siv);
+                        }));
+                    }
+                    EventSignal::Shutdown => {
+                        // TODO: está acontecendo algum panic! ao finalizar, consegui ver pelo debug. Não está impactando
+                        // nas outras partidas, mas é algo estranho
+
+                        // primeiro exibe uma mensagem de finalização e depois realmente quita.
+                        let _ = sink
+                            .send(Box::new(|siv: &mut Cursive| {
+                                siv.add_layer(Dialog::info("Fim de Jogo!"));
+
+                                let cb = siv.cb_sink().clone();
+
+                                tokio::spawn(async move {
+                                    tokio::time::sleep(Duration::from_secs(5)).await;
+                                    cb.send(Box::new(|s| s.quit())).unwrap();
+                                });
+                            }))
+                            .unwrap();
+                    }
                 }
             }
         }
 
         // The connection dropped, so let’s notify the graphical interface (Cursive) to close.
         let _ = sink.send(Box::new(|siv: &mut Cursive| {
-            siv.quit();
+            siv.add_layer(
+                Dialog::text("A conexão com o servidor foi encerrada. \n(O servidor pode ter sido desligado ou reiniciado)")
+                    .title("Desconectado")
+                    .button("Sair", |s| s.quit())
+            );
         }));
     });
 
