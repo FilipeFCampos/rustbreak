@@ -1,7 +1,8 @@
 use crate::game::game_session::{GameEvent, GameSession};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc, Mutex};
+use std::sync::atomic::AtomicBool;
+use tokio::sync::{Mutex, broadcast, mpsc};
 use uuid::Uuid;
 
 // MUDANÇA IMPORTANTE:

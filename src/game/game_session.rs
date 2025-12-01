@@ -1,4 +1,4 @@
-use crate::game::game_scene::{GameScene, GameSceneState};
+use crate::game::game_scene::{GameScene, GameSceneType};
 use crate::game::player::Player;
 use chrono::Local;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -7,7 +7,7 @@ use std::io::BufReader;
 use std::path::PathBuf;
 use uuid::Uuid;
 
-pub const MAX_PLAYERS_PER_SESSION: usize = 3;
+pub const MAX_PLAYERS_PER_SESSION: usize = 1;
 
 pub enum GameEvent {
     PlayerJoined(String),
@@ -26,7 +26,7 @@ pub enum UpdateResult {
 #[derive(Clone)]
 pub struct GameSession {
     pub id: Uuid,
-    pub current_scene_state: GameSceneState,
+    pub current_scene_state: GameSceneType,
     pub party: HashSet<Player>,
     pub has_started: bool,
     answers: HashMap<String, bool>,
@@ -38,7 +38,7 @@ impl GameSession {
     pub fn new() -> Self {
         Self {
             id: Uuid::new_v4(),
-            current_scene_state: GameSceneState::Prelude,
+            current_scene_state: GameSceneType::Prelude(String::new()),
             party: HashSet::new(),
             answers: HashMap::new(),
             has_started: false,
@@ -88,7 +88,7 @@ impl GameSession {
         match event {
             GameEvent::PlayerAnswer { username, answer } => {
                 let scene = match &self.current_scene_state {
-                    GameSceneState::Normal(scene) => scene,
+                    GameSceneType::Normal(scene) => scene,
                     _ => return UpdateResult::Continue(None),
                 };
 
@@ -154,7 +154,7 @@ impl GameSession {
 
     pub fn get_scene_json(&self) -> Option<String> {
         match &self.current_scene_state {
-            GameSceneState::Normal(scene) => serde_json::to_string(scene).ok(),
+            GameSceneType::Normal(scene) => serde_json::to_string(scene).ok(),
             _ => None,
         }
     }
@@ -169,11 +169,11 @@ impl GameSession {
 
         let game_scene: GameScene =
             serde_json::from_reader(reader).map_err(|_| "Failed to deserialize game scene.")?;
-        self.current_scene_state = GameSceneState::Normal(game_scene);
+        self.current_scene_state = GameSceneType::Normal(game_scene);
         Ok(())
     }
 
-    pub fn get_prelude_text() -> String {
+    fn get_prelude_text(&self) -> String {
         let current_date = Local::now().format("%d/%m/%Y %H:%M").to_string();
         format!(
             r#"
@@ -222,13 +222,13 @@ O 'Crab Guardian' detectou... 'interferência'. As anomalias não parecem totalm
 
 Enfim... O conhecimento, a discussão e o consenso são suas únicas armas.
 
-STATUS DA SESSÃO: JOGADORES CONECTADOS: 3 
+STATUS DA SESSÃO: JOGADORES CONECTADOS: {}
 
 O chat de vocês está aberto. Discutam.
 O Saguão espera.
-Boa sorte. Vocês vão precisar.
-"#,
+Boa sorte. Vocês vão precisar."#,
             current_date,
+            self.party.len()
         )
     }
 
@@ -238,13 +238,15 @@ Boa sorte. Vocês vão precisar.
         }
 
         self.has_started = true;
-        if let Some(scene) = self.remaining_scenes.pop_front() {
-            if self.load_scene(scene.as_str()).is_ok() {
-                println!("Initial scene loaded successfully!");
-            } else {
-                println!("Error loading initial scene.");
-            }
-        }
+        self.current_scene_state = GameSceneType::Prelude(self.get_prelude_text());
+
+        // if let Some(scene) = self.remaining_scenes.pop_front() {
+        //     if self.load_scene(scene.as_str()).is_ok() {
+        //         println!("Initial scene loaded successfully!");
+        //     } else {
+        //         println!("Error loading initial scene.");
+        //     }
+        // }
 
         println!(
             "Session {} started with {} players.",

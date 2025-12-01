@@ -4,7 +4,9 @@ use cursive::{
     event::{Event, Key},
     theme::{BaseColor, Color, PaletteColor},
     traits::*,
-    views::{Dialog, DummyView, EditView, LinearLayout, Panel, ScrollView, TextView},
+    views::{
+        Dialog, DummyView, EditView, EnableableView, LinearLayout, Panel, ScrollView, TextView,
+    },
 };
 
 use crate::client::add_scroll_callbacks;
@@ -56,12 +58,13 @@ fn handle_chat(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
         .full_width();
 
     // Input area
-    let input = EditView::new()
-        .on_submit(move |s, text| input_action(s, text.to_string()))
-        .with_name("input")
-        .max_height(3)
-        .min_width(50)
-        .full_width();
+    let input = EnableableView::new(
+        EditView::new().on_submit(move |s, text| input_action(s, text.to_string())),
+    )
+    .with_name("chat_input")
+    .max_height(3)
+    .min_width(50)
+    .full_width();
 
     // Help text for user commands
     let help_text = TextView::new("ESC:quit | Enter:send | Commands: /help, /clear, /quit, ...")
@@ -92,32 +95,42 @@ fn handle_chat(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
 
     // Global keybindinds
     siv.add_global_callback(Key::Esc, |s| s.quit());
+
     siv.add_global_callback('/', |s| {
-        s.call_on_name("input", |view: &mut EditView| {
-            view.set_content("/");
+        s.call_on_name("chat_input", |view: &mut EnableableView<EditView>| {
+            if view.is_enabled() {
+                view.get_inner_mut().set_content("/");
+                // view.get_inner_mut().take_focus(); // Opcional
+            }
         });
     });
 
     siv.add_global_callback(Event::Unknown(vec![127]), |s| {
-        s.call_on_name("input", |view: &mut EditView| {
-            let mut content = view.get_content().to_string();
-            content.pop();
-            view.set_content(content);
+        s.call_on_name("chat_input", |view: &mut EnableableView<EditView>| {
+            if view.is_enabled() {
+                let mut content = view.get_inner_mut().get_content().to_string();
+                content.pop();
+                view.get_inner_mut().set_content(content);
+            }
         });
     });
 
     siv.add_global_callback(Event::Unknown(vec![8]), |s| {
-        s.call_on_name("input", |view: &mut EditView| {
-            let mut content = view.get_content().to_string();
-            let mut chars = content.chars();
-            chars.next();
-            view.set_content(chars.as_str());
+        s.call_on_name("chat_input", |view: &mut EnableableView<EditView>| {
+            if view.is_enabled() {
+                let content = view.get_inner_mut().get_content().to_string();
+                let mut chars = content.chars();
+                chars.next();
+                view.get_inner_mut().set_content(chars.as_str());
+            }
         });
     });
 
     siv.add_global_callback(Event::CtrlChar('u'), |s| {
-        s.call_on_name("input", |view: &mut EditView| {
-            view.set_content("");
+        s.call_on_name("chat_input", |view: &mut EnableableView<EditView>| {
+            if view.is_enabled() {
+                view.get_inner_mut().set_content("");
+            }
         });
     });
 }

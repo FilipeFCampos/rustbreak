@@ -1,12 +1,13 @@
 use chrono::Local;
+use cursive::event::Event;
 use rustbreak::common::{
     formatting::*,
     messages::{ChatMessage, EventSignal, MessageType},
     shared::*,
 };
-use rustbreak::game::game_scene::{GameScene, GameSceneState};
+use rustbreak::game::game_scene::GameSceneType;
 use rustbreak::game::game_session::{
-    GameEvent, GameSession, UpdateResult, MAX_PLAYERS_PER_SESSION,
+    GameEvent, GameSession, MAX_PLAYERS_PER_SESSION, UpdateResult,
 };
 use rustbreak::handlers::server_handlers::{ServerSessions, SessionEntry};
 use std::collections::HashMap;
@@ -16,7 +17,7 @@ use tokio::sync::mpsc;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{TcpListener, TcpStream},
-    sync::{broadcast, Mutex},
+    sync::{Mutex, broadcast},
 };
 use uuid::Uuid;
 
@@ -123,7 +124,7 @@ async fn handle_connection(
                 ),
                 String,
             > = match available_id {
-                // não tem party !!
+                // Criando nova sessão
                 None => {
                     let (broadcast_sender, broadcast_receiver) = broadcast::channel::<String>(128);
                     let (event_sender, event_receiver) = mpsc::channel::<GameEvent>(128);
@@ -310,7 +311,6 @@ async fn game_loop(
             GameEvent::PlayerJoined(player) => {
                 let join_msg = format!("{} entrou no chat!", player);
                 send_server_msg(join_msg, &broadcast_channel).await;
-
                 println!(
                     "├─[{}] {GREEN}'{}' joined the chat!{RESET}",
                     get_time(),
@@ -319,29 +319,21 @@ async fn game_loop(
 
                 let mut s = session.lock().await;
                 if s.party.len() == MAX_PLAYERS_PER_SESSION && !s.has_started {
-                    send_server_msg("Aventura iniciada...".into(), &broadcast_channel).await;
+                    s.begin_game();
 
-                    if let GameSceneState::Prelude = s.current_scene_state {
-                        drop(s);
-                        let prelude_text = GameSession::get_prelude_text();
-                        let lines = prelude_text
-                            .lines()
-                            .map(|l| l.to_string())
-                            .collect::<Vec<_>>();
-                        for line in lines {
-                            if !line.trim().is_empty() {
-                                send_server_msg(line, &broadcast_channel).await;
-                            }
-                            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-                        }
+                    if let GameSceneType::Prelude(_) = &s.current_scene_state {
+                        emit_scene_signal(&s.current_scene_state, &broadcast_channel).await;
+                        s.next_scene();
 
-                        let mut s = session.lock().await;
-                        s.begin_game();
-                        if let GameSceneState::Normal(scene) = &s.current_scene_state {
+                        if let GameSceneType::Normal(scene) = &s.current_scene_state {
                             let scene_clone = scene.clone();
-                            drop(s);
-                            emit_scene_signal(&scene_clone, &broadcast_channel).await;
+                            emit_scene_signal(
+                                &GameSceneType::Normal(scene_clone),
+                                &broadcast_channel,
+                            )
+                            .await;
                         }
+                        drop(s);
                         continue;
                     }
                 }
@@ -357,7 +349,6 @@ async fn game_loop(
                         let _ = event_channel.send(GameEvent::AdvanceTurn).await;
                     }
                     UpdateResult::Continue(Some(answer)) => {
-                        // TODO: tratar/ignorar se a resposta não for a, b, c ou d
                         send_server_msg(
                             format!("{} escolheu a resposta {}", username, answer),
                             &broadcast_channel,
@@ -380,8 +371,11 @@ async fn game_loop(
             GameEvent::AdvanceTurn => {
                 let mut s = session.lock().await;
                 s.next_scene();
-                if let GameSceneState::Normal(scene) = &s.current_scene_state {
-                    emit_scene_signal(scene, &broadcast_channel).await;
+                match &s.current_scene_state {
+                    GameSceneType::Normal(_) => {
+                        emit_scene_signal(&s.current_scene_state, &broadcast_channel).await;
+                    }
+                    _ => {}
                 }
                 drop(s);
             }
@@ -421,10 +415,10 @@ async fn game_over(error_msg_scene: String, broadcast: &broadcast::Sender<String
     let _ = broadcast.send(json);
 }
 
-async fn emit_scene_signal(scene: &GameScene, broadcast: &broadcast::Sender<String>) {
-    let scene_signal = EventSignal::Scene(scene.clone());
+async fn emit_scene_signal(scene: &GameSceneType, broadcast: &broadcast::Sender<String>) {
+    let scene_signal = EventSignal::GameScene(scene.clone());
     let scene_json = serde_json::to_string(&scene_signal).unwrap();
-    let _ = broadcast.send(format!("{}\n", scene_json));
+    let _ = broadcast.send(format!("{}", scene_json));
 }
 
 async fn send_server_msg(msg: String, broadcast: &broadcast::Sender<String>) {
