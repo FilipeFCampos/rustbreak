@@ -76,7 +76,7 @@ async fn handle_connection(
     let mut broadcast_sender: Option<broadcast::Sender<String>> = None;
     let mut event_sender: Option<mpsc::Sender<GameEvent>> = None; // canal que possibilita o isolamento entre handle_connection e game_loop
     // com essa queue, handle_connection consegue empilhar eventos daquela sessão que serão lidos paralelamente pelo game_loop
-    let mut event_receiver: Option<mpsc::Receiver<GameEvent>> = None;let mut chat_lock: Option<Arc<AtomicBool>> = None;
+    let mut event_receiver: Option<mpsc::Receiver<GameEvent>> = None;
     // enquanto o event_channel permite o handle_connection empilhar, o event_receiver é justamente o observador do game_loop
     // dessa ação, desempilhando as ações e podendo tomar decisões
 
@@ -84,7 +84,7 @@ async fn handle_connection(
     // e dificultava muito de tentar fazer alguma coisa. espero que se prove uma técnica legal kkkkkkk
 
     let mut chat_lock: Option<Arc<AtomicBool>> = None;
-    
+
     // LOGIN + REGISTRO DO PLAYER
     loop {
         username.clear();
@@ -282,7 +282,7 @@ async fn handle_connection(
                     // Se estiver TRUE (Bloqueado)
                     if chat_lock.load(Ordering::Relaxed) {
                         let silence_msg = ChatMessage {
-                            username: "ERROR".to_string(), 
+                            username: "ERROR".to_string(),
                             content: "🤫 Shhh! O narrador está falando... Aguarde.".to_string(),
                             timestamp: get_time(),
                             message_type: MessageType::SystemNotification,
@@ -347,16 +347,32 @@ async fn game_loop(
 
                 let mut s = session.lock().await;
                 if s.party.len() == MAX_PLAYERS_PER_SESSION && !s.has_started {
-                    s.begin_game();
-
                     send_server_msg("Aventura iniciada...".into(), &broadcast_channel).await;
 
-                    // TODO: mudar pra ser Prelude
-                    if let GameSceneState::Normal(scene) = &s.current_scene_state {
-                        emit_scene_signal(&scene, &broadcast_channel, &chat_lock).await;
+                    if let GameSceneState::Prelude = s.current_scene_state {
+                        drop(s);
+                        let prelude_text = GameSession::get_prelude_text();
+                        let lines = prelude_text
+                            .lines()
+                            .map(|l| l.to_string())
+                            .collect::<Vec<_>>();
+                        for line in lines {
+                            if !line.trim().is_empty() {
+                                send_server_msg(line, &broadcast_channel).await;
+                            }
+                            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                        }
+
+                        let mut s = session.lock().await;
+                        s.begin_game();
+                        if let GameSceneState::Normal(scene) = &s.current_scene_state {
+                            let scene_clone = scene.clone();
+                            drop(s);
+                            emit_scene_signal(&scene_clone, &broadcast_channel, &chat_lock).await;
+                        }
+                        continue;
                     }
                 }
-                drop(s);
             }
             GameEvent::PlayerAnswer { username, answer } => {
                 let mut s = session.lock().await;
@@ -378,8 +394,14 @@ async fn game_loop(
                     }
                     UpdateResult::Continue(None) => {}
                     UpdateResult::GameOver(error_msg) => {
-                        game_over(error_msg, &broadcast_channel).await;
-                        break;
+                        let _ = event_channel
+                            .send(GameEvent::GameEnding(UpdateResult::GameOver(error_msg)))
+                            .await;
+                    }
+                    UpdateResult::EndGame(scene_msg) => {
+                        let _ = event_channel
+                            .send(GameEvent::GameEnding(UpdateResult::EndGame(scene_msg)))
+                            .await;
                     }
                 }
             }
@@ -391,16 +413,36 @@ async fn game_loop(
                 }
                 drop(s);
             }
+            GameEvent::GameEnding(result) => match result {
+                UpdateResult::GameOver(msg) => {
+                    game_over(msg, &broadcast_channel).await;
+                    break;
+                }
+                UpdateResult::EndGame(msg) => {
+                    end_game(msg, &broadcast_channel).await;
+                    break;
+                }
+                _ => {}
+            },
         }
     }
+}
+
+async fn end_game(scene_msg: String, broadcast: &broadcast::Sender<String>) {
+    send_server_msg(scene_msg, &broadcast).await;
+    tokio::time::sleep(Duration::from_secs(5)).await;
+
+    let shutdown_signal = EventSignal::Shutdown;
+    let json = serde_json::to_string(&shutdown_signal).unwrap();
+    let _ = broadcast.send(json);
 }
 
 async fn game_over(error_msg_scene: String, broadcast: &broadcast::Sender<String>) {
     send_server_msg(error_msg_scene, &broadcast).await;
     tokio::time::sleep(Duration::from_secs(2)).await;
 
-    let end_game_msg = "Andando pelos corredores do IMD, vocês recebem uma notificação no terminal. Quando o abrem, leem a seguinte mensagem: \n 'Caros ajudantes, vocês se provaram ineficientes para a tarefa a qual lhes foi passada. Infelizmente, lhes falta conhecimento do nosso sistema para que consigam nos ajudar. Desejo que prosperem no seu desenvolvimento enquanto programadores e em outra vida sejam capazes de me ajudar. \nCrab Guardian'. Vocês saem cabisbaixos pela entrada do IMD sabendo que falharam na missão, esperando que outras pessoas mais experientes sejam capazes de consertar este caos.".into();
-    send_server_msg(end_game_msg, &broadcast).await;
+    let game_over_msg = "Andando pelos corredores do IMD, vocês recebem uma notificação no terminal. Quando o abrem, leem a seguinte mensagem: \n 'Caros ajudantes, vocês se provaram ineficientes para a tarefa a qual lhes foi passada. Infelizmente, lhes falta conhecimento do nosso sistema para que consigam nos ajudar. Desejo que prosperem no seu desenvolvimento enquanto programadores e em outra vida sejam capazes de me ajudar. \nCrab Guardian'. Vocês saem cabisbaixos pela entrada do IMD sabendo que falharam na missão, esperando que outras pessoas mais experientes sejam capazes de consertar este caos.".into();
+    send_server_msg(game_over_msg, &broadcast).await;
 
     let shutdown_signal = EventSignal::Shutdown;
     let json = serde_json::to_string(&shutdown_signal).unwrap();
@@ -408,8 +450,8 @@ async fn game_over(error_msg_scene: String, broadcast: &broadcast::Sender<String
 }
 
 async fn emit_scene_signal(
-    scene: &GameScene, 
-    broadcast: &broadcast::Sender<String>, 
+    scene: &GameScene,
+    broadcast: &broadcast::Sender<String>,
     chat_lock: &Arc<AtomicBool>,
 ) {
     chat_lock.store(true, Ordering::SeqCst);
@@ -428,11 +470,11 @@ async fn emit_scene_signal(
     let delay_ms = (text_len * MS_PER_CHAR) + BUFFER_MS;
 
     let lock_clone = chat_lock.clone();
-    let scene_id = scene.id; 
+    let scene_id = scene.id;
 
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-        
+
         // Desbloqueia
         lock_clone.store(false, Ordering::SeqCst);
         println!("Chat liberado para a cena ID {}", scene_id);

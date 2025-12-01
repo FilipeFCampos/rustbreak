@@ -1,10 +1,10 @@
+use cursive::theme::{BaseColor, Color, Effect, Style};
+use cursive::utils::markup::StyledString;
 use cursive::views::Dialog;
 use cursive::{
     views::{EditView, TextView, NamedView, ScrollView, EnableableView},
     Cursive,
 };
-use cursive::theme::{BaseColor, Color, Effect, Style};
-use cursive::utils::markup::StyledString;
 use rustbreak::frontend::tui;
 use rustbreak::{
     client::{
@@ -18,8 +18,7 @@ use rustbreak::{
     },
     frontend::tui::make_header,
 };
-use std::time::Duration;
-use std::{error::Error, sync::Arc};
+use std::{error::Error, sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{tcp::OwnedWriteHalf, TcpStream},
@@ -64,7 +63,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Async task to handle incoming messages
     tokio::spawn(async move {
-        while let Ok(Some(line)) = lines.next_line().await {
+        'main_loop: while let Ok(Some(line)) = lines.next_line().await {
             // The received message json object is converted back to a `ChatMessage`
             if let Ok(msg) = serde_json::from_str::<ChatMessage>(&line) {
                 let formatted_msg = match msg.message_type {
@@ -87,27 +86,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 };
 
                 // This writes the message in the chat
-                if sink
-                    .send(Box::new(move |siv: &mut Cursive| {
-                        siv.call_on_name("messages", |view: &mut TextView| {
-                            view.append(formatted_msg);
-                        });
-
-                        let should_scroll = {
-                            if let Some(client_data) = siv.user_data::<ClientData>() {
-                                client_data.scroll_state.auto_scroll
-                            } else {
-                                true
-                            }
-                        };
-
-                        if should_scroll {
-                            scroll_to_bottom(siv);
+                match msg.message_type {
+                    // TODO: Create a third `message_type` representing game scenarios/events.
+                    // Only those messages should be printed with a typing effect.
+                    MessageType::UserMessage => {
+                        if sink
+                            .send(Box::new(move |siv: &mut Cursive| {
+                                print_message(siv, formatted_msg.into_source());
+                            }))
+                            .is_err()
+                        {
+                            break 'main_loop;
                         }
-                    }))
-                    .is_err()
-                {
-                    break;
+                    }
+                    MessageType::SystemNotification => {
+                        for ch in formatted_msg.into_source().chars() {
+                            if sink
+                                .send(Box::new(move |siv: &mut Cursive| {
+                                    print_message(siv, ch.to_string());
+                                }))
+                                .is_err()
+                            {
+                                break 'main_loop;
+                            }
+                            std::thread::sleep(Duration::from_millis(50));
+                        }
+                    }
                 }
             // P.s. the next 20 lines of code were incredibly painful to come up with
             // Please remember to take a break and drink some water!
@@ -196,14 +200,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         // primeiro exibe uma mensagem de finalização e depois realmente quita.
                         let _ = sink
                             .send(Box::new(|siv: &mut Cursive| {
-                                siv.add_layer(Dialog::info("Fim de Jogo!"));
+                                siv.add_layer(
+                                    Dialog::text("Agradecemos por ter jogado Rustbreak! ;p")
+                                        .title("Fim do Jogo")
+                                        .button("Sair", |s| s.quit()),
+                                );
 
                                 let cb = siv.cb_sink().clone();
-
-                                tokio::spawn(async move {
-                                    tokio::time::sleep(Duration::from_secs(5)).await;
-                                    cb.send(Box::new(|s| s.quit())).unwrap();
-                                });
                             }))
                             .unwrap();
                     }
@@ -312,4 +315,29 @@ fn send_message(siv: &mut Cursive, msg: String) {
     siv.call_on_name("chat_input", |view: &mut EnableableView<EditView>| {
         view.get_inner_mut().set_content("");
     });
+}
+
+/// Prints a message to the chat view, respecting the auto-scroll state.
+///
+/// This function should be called inside the Cursive event sink.
+///
+/// ### Parameters
+/// - `siv`: The TUI struct from the Cursive crate;
+/// - `msg`: The message to be printed.
+fn print_message(siv: &mut Cursive, msg: String) {
+    siv.call_on_name("messages", |view: &mut TextView| {
+        view.append(msg);
+    });
+
+    let should_scroll = {
+        if let Some(client_data) = siv.user_data::<ClientData>() {
+            client_data.scroll_state.auto_scroll
+        } else {
+            true
+        }
+    };
+
+    if should_scroll {
+        scroll_to_bottom(siv);
+    }
 }
