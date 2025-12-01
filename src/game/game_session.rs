@@ -1,10 +1,10 @@
 use crate::game::game_scene::{GameScene, GameSceneState};
 use crate::game::player::Player;
+use chrono::Local;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
-use chrono::Local;
 use uuid::Uuid;
 
 pub const MAX_PLAYERS_PER_SESSION: usize = 3;
@@ -13,12 +13,14 @@ pub enum GameEvent {
     PlayerJoined(String),
     PlayerAnswer { username: String, answer: String },
     AdvanceTurn,
+    GameEnding(UpdateResult),
 }
 
 pub enum UpdateResult {
     Advance(String),          // String guarda a mensagem de erro ou de acerto do cenário!
     Continue(Option<String>), // tem String pra exibir a resposta do usuário diante da questão, None pra qualquer outra coisa
-    GameOver(String),         // guarda a mensagem de erro do cenário
+    EndGame(String),
+    GameOver(String), // guarda a mensagem de erro do cenário
 }
 
 #[derive(Clone)]
@@ -49,6 +51,7 @@ impl GameSession {
                 "scene_5".into(),
                 "scene_6".into(),
                 "scene_7".into(),
+                "final_scene".into(),
             ]
             .into(),
         }
@@ -123,6 +126,10 @@ impl GameSession {
                     return UpdateResult::GameOver(scene.error_msg.clone());
                 }
 
+                if self.remaining_scenes.is_empty() {
+                    return UpdateResult::EndGame(text_result);
+                }
+
                 let mut count_result = format!(
                     "{} jogadores acertaram e {} erraram! Vocês ainda têm {} tentativa(s)! \n",
                     correct_count, wrong_count, self.remaining_answers
@@ -169,7 +176,7 @@ impl GameSession {
     pub fn get_prelude_text() -> String {
         let current_date = Local::now().format("%d/%m/%Y %H:%M").to_string();
         format!(
-        r#"
+            r#"
 Iniciando conexão com quantum.imd.ufrn.br...
 Protocolo TELNET handshake... OK.
 ...Conexão segura estabelecida.
@@ -215,13 +222,13 @@ O 'Crab Guardian' detectou... 'interferência'. As anomalias não parecem totalm
 
 Enfim... O conhecimento, a discussão e o consenso são suas únicas armas.
 
-[STATUS DA SESSÃO: JOGADORES CONECTADOS: 3]
+STATUS DA SESSÃO: JOGADORES CONECTADOS: 3 
 
 O chat de vocês está aberto. Discutam.
 O Saguão espera.
 Boa sorte. Vocês vão precisar.
 "#,
-            current_date
+            current_date,
         )
     }
 
