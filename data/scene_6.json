@@ -1,14 +1,14 @@
 {
-	"id": 6,
-	"description": "Ao entrarem no IMD, tudo parece normal: muitas pessoas andando, professores, alunos, funcionários... Porém, de repente, as pessoas começam a aparecer e desaparecer aleatoriamente, como glitches na realidade. Vocês tentam falar com um professor que acabou de sumir e o terminal de vocês congela, exibindo uma mensagem de pânico. O jogo 'crasha'. Ao reiniciar, vocês olham o código-fonte da simulação do Saguão.",
-	"code": "fn buscar_entidade(id: u32) -> Option<String> {\n    if id == 101 {\n        return Some(\"Prof. Samyr (Cálculo)\".to_string());\n    }\n    if id == 202 {\n        return None;\n    }\n    // demais condições\n    Some(\"Aluno Genérico\".to_string())\n}\nfn interagir_com_entidade(id_alvo: u32) {\n    // id_alvo = 202\n    let entidade = buscar_entidade(id_alvo);\n    println!(\"Interagindo com: {}\", entidade.unwrap());\n}\nfn imprimir_todos() {\n    for i in 101..=505 {\n        interagir_com_entidade(i);\n    }\n}",
-	"options": {
-		"a": "O println! não sabe como formatar um tipo Option<String>.",
-		"b": "A função buscar_entidade está errada, ela deveria sempre retornar uma String, não um Option.",
-		"c": "O id_alvo com valor 202 é um número inválido para a função buscar_entidade, causando o pânico.",
-		"d": "O código chama .unwrap() na entidade de id 202.",
-		"id_correct": "d"
-	},
-	"success_msg": "Exatamente! O código usou .unwrap() confiantemente, assumindo que a entidade sempre existiria. Mas como a função retornou None para o ID 202, o programa entrou em pânico. O correto seria tratar o None com um match ou if let. Após fazerem os devidos ajustes, todas as pessoas voltam corretamente.",
-	"error_msg": "Vocês tentam consertar o código, mas ele nem compila. Enquanto vocês tentam arrumar de outra forma, a instabilidade piora. O panic! acontece de novo, mas desta vez vocês ouvem uma risada distorcida no terminal: 'Patético. Não sabem nem tratar um None..' Os glitches no primeiro andar se intensificam e todas as pessoas ali dentro parecem julgá-los… ou seria um olhar de ansiedade enquanto desaparecem constantemente? Vocês se veem impotentes e se afastam."
+  "id": 6,
+  "description": "Ao entrarem no IMD, tudo parece normal: muitas pessoas andando, professores, alunos, funcionários... Porém, de repente, as pessoas começam a aparecer e desaparecer aleatoriamente, como glitches na realidade. Vocês tentam falar com um professor que acabou de sumir e o terminal de vocês congela, exibindo uma mensagem de pânico. O jogo 'crasha'. Ao reiniciar, vocês olham o código-fonte da simulação do Saguão.",
+  "code": "fn buscar_entidade(id: u32) -> Option<String> {\n    if id == 101 {\n        return Some(\"Prof. Samyr (Cálculo)\".to_string());\n    }\n    if id == 202 {\n        return None;\n    }\n    // demais condições\n    Some(\"Aluno Genérico\".to_string())\n}\nfn interagir_com_entidade(id_alvo: u32) {\n    // id_alvo = 202\n    let entidade = buscar_entidade(id_alvo);\n    println!(\"Interagindo com: {}\", entidade.unwrap());\n}\nfn imprimir_todos() {\n    for i in 101..=505 {\n        interagir_com_entidade(i);\n    }\n}",
+  "options": {
+    "a": "O println! não sabe como formatar um tipo Option<String>.",
+    "b": "A função buscar_entidade está errada, ela deveria sempre retornar uma String, não um Option.",
+    "c": "O código chama .unwrap() na entidade de id 202.",
+    "d": "O id_alvo com valor 202 é um número inválido para a função buscar_entidade, causando o pânico.",
+    "id_correct": "c"
+  },
+  "success_msg": "Exatamente! O código usou .unwrap() confiantemente, assumindo que a entidade sempre existiria. Mas como a função retornou None para o ID 202, o programa entrou em pânico. O correto seria tratar o None com um match ou if let. Após fazerem os devidos ajustes, todas as pessoas voltam corretamente.",
+  "error_msg": "Vocês tentam consertar o código, mas ele nem compila. Enquanto vocês tentam arrumar de outra forma, a instabilidade piora. O panic! acontece de novo, mas desta vez vocês ouvem uma risada distorcida no terminal: 'Patético. Não sabem nem tratar um None..' Os glitches no primeiro andar se intensificam e todas as pessoas ali dentro parecem julgá-los… ou seria um olhar de ansiedade enquanto desaparecem constantemente? Vocês se veem impotentes e se afastam."
 }

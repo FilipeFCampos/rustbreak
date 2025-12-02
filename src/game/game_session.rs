@@ -6,18 +6,33 @@ use std::io::BufReader;
 use std::path::PathBuf;
 use uuid::Uuid;
 
+<<<<<<< Updated upstream
 pub const MAX_PLAYERS_PER_SESSION: usize = 3;
+=======
+pub const PLAYERS_PER_SESSION: usize = 3;
+>>>>>>> Stashed changes
 
 pub enum GameEvent {
     PlayerJoined(String),
     PlayerAnswer { username: String, answer: String },
     AdvanceTurn,
+<<<<<<< Updated upstream
+=======
+    GameEnding(UpdateResult),
+    ConfirmNextScene,
+>>>>>>> Stashed changes
 }
 
 pub enum UpdateResult {
     Advance(String),          // String guarda a mensagem de erro ou de acerto do cenário!
     Continue(Option<String>), // tem String pra exibir a resposta do usuário diante da questão, None pra qualquer outra coisa
+<<<<<<< Updated upstream
     GameOver(String),         // guarda a mensagem de erro do cenário
+=======
+    EndGame(String),
+    GameOver(String), // guarda a mensagem de erro do cenário
+    WaitConfirmation(String),
+>>>>>>> Stashed changes
 }
 
 #[derive(Clone)]
@@ -29,6 +44,7 @@ pub struct GameSession {
     answers: HashMap<String, bool>,
     remaining_answers: i8,
     remaining_scenes: VecDeque<String>,
+    pub waiting_for_confirmation: bool,
 }
 
 impl GameSession {
@@ -50,13 +66,14 @@ impl GameSession {
                 "scene_7".into(),
             ]
             .into(),
+            waiting_for_confirmation: false,
         }
     }
 
     pub fn add_player(&mut self, username: &String) -> Result<(), String> {
         if self.contains(&username) {
             return Err(format!("Player already registered: {}", username));
-        } else if self.party.len() >= MAX_PLAYERS_PER_SESSION {
+        } else if self.party.len() >= PLAYERS_PER_SESSION {
             return Err(format!("Party already full: {}", username));
         }
 
@@ -82,7 +99,18 @@ impl GameSession {
         }
 
         match event {
+            GameEvent::ConfirmNextScene => {
+                if self.waiting_for_confirmation {
+                    self.waiting_for_confirmation = false;
+                    return UpdateResult::Advance("Avançando...".to_string());
+                }
+                UpdateResult::Continue(None)
+            }
             GameEvent::PlayerAnswer { username, answer } => {
+                if self.waiting_for_confirmation {
+                    return UpdateResult::Continue(None);
+                }
+
                 let scene = match &self.current_scene_state {
                     GameSceneState::Normal(scene) => scene,
                     _ => return UpdateResult::Continue(None),
@@ -128,7 +156,14 @@ impl GameSession {
                 );
 
                 count_result.push_str(&text_result);
-                UpdateResult::Advance(count_result)
+                count_result.push_str("\n\nDigitem /yes para continuar...");
+
+                if self.remaining_scenes.is_empty() {
+                    return UpdateResult::EndGame(text_result);
+                }
+
+                self.waiting_for_confirmation = true;
+                UpdateResult::WaitConfirmation(count_result)
             }
             GameEvent::PlayerJoined(_) => UpdateResult::Continue(None),
             _ => UpdateResult::Continue(None),
@@ -165,6 +200,70 @@ impl GameSession {
         Ok(())
     }
 
+<<<<<<< Updated upstream
+=======
+    fn get_prelude_text(&self) -> String {
+        let current_date = Local::now().format("%d/%m/%Y %H:%M").to_string();
+        format!(
+            r#"
+Iniciando conexão com quantum.imd.ufrn.br...
+Protocolo TELNET handshake... OK.
+...Conexão segura estabelecida.
+
+BEM-VINDOS, Investigadores.
+
+(A tela pisca brevemente...)
+(A luz do terminal falha...)
+
+[PANIC: unexpected kernel trap]
+[SEGFAULT @0x00ffd19a]
+[FATAL: recursion detected in non-recursive function]
+[STACK OVERFLOW PROTECTOR: DISARMED]
+
+(A tela estabiliza novamente.)
+
+Data Estelar: {}
+Status do Sistema: **CRÍTICO**
+Local: Instituto Metrópole Digital (IMD), UFRN.
+
+O orgulho do IMD, o supercomputador 'Potiguara-Q', foi ativado esta manhã. Escrito inteiramente em Rust para garantir segurança e performance quântica, ele era a promessa de uma nova era…
+
+Porém...
+
+A promessa falhou.
+
+Não do jeito que vocês devem estar pensando. O 'Potiguara-Q' não 'crashou'. Ele... 'compilou'. A realidade do campus da UFRN foi tratada como seu código-fonte, e ele encontrou 'bugs'.
+
+Agora, o computador está ativamente tentando 'corrigir' a realidade, causando anomalias catastróficas. O sistema está em caos.
+
+Uma sub-rotina de segurança de baixo nível, o 'Crab Guardian', conseguiu contatar vocês. Ele identificou seus terminais como pertencentes a usuários que entendem a Lógica por trás da Linguagem.
+
+Sem mais enrolação, vamos para vossa missão:
+
+Entrar no sistema.
+Encontrar as anomalias.
+E forçar um CONSENSO.
+
+Vocês devem 'corrigir o código' da realidade, juntos.
+
+Mas cuidado.
+O 'Crab Guardian' detectou... 'interferência'. As anomalias não parecem totalmente acidentais…
+
+Enfim... O conhecimento, a discussão e o consenso são suas únicas armas.
+
+STATUS DA SESSÃO: JOGADORES CONECTADOS: {}
+
+O chat de vocês está aberto. Discutam.
+O Saguão espera.
+Boa sorte. Vocês vão precisar.
+
+"#,
+            current_date,
+            self.party.len()
+        )
+    }
+
+>>>>>>> Stashed changes
     pub fn begin_game(&mut self) {
         // Se já havia iniciado, pula
         if self.has_started {

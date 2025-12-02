@@ -6,7 +6,11 @@ use rustbreak::common::{
 };
 use rustbreak::game::game_scene::{GameScene, GameSceneState};
 use rustbreak::game::game_session::{
+<<<<<<< Updated upstream
     GameEvent, GameSession, UpdateResult, MAX_PLAYERS_PER_SESSION,
+=======
+    GameEvent, GameSession, PLAYERS_PER_SESSION, UpdateResult,
+>>>>>>> Stashed changes
 };
 use rustbreak::handlers::server_handlers::{ServerSessions, SessionEntry};
 use std::collections::HashMap;
@@ -108,7 +112,7 @@ async fn handle_connection(
             // encontra alguma partida com vagas!
             for (id, entry) in sessions.iter() {
                 let session = entry.session.lock().await;
-                if session.party.len() < MAX_PLAYERS_PER_SESSION {
+                if session.party.len() < PLAYERS_PER_SESSION {
                     available_id = Some(*id);
                     break;
                 }
@@ -242,6 +246,11 @@ async fn handle_connection(
                 let content = line.trim().to_string();
                 line.clear();
 
+                if content.starts_with("/yes") {
+                    let _ = event_channel.send(GameEvent::ConfirmNextScene).await;
+                    continue;
+                }
+
                 if content.starts_with("/answer ") {
                     let answer = content["/answer ".len()..].trim().to_string();
                     const VALID_OPTIONS: [&str; 4] = ["a", "b", "c", "d"];
@@ -318,7 +327,7 @@ async fn game_loop(
                 );
 
                 let mut s = session.lock().await;
-                if s.party.len() == MAX_PLAYERS_PER_SESSION && !s.has_started {
+                if s.party.len() == PLAYERS_PER_SESSION && !s.has_started {
                     s.begin_game();
 
                     send_server_msg("Aventura iniciada...".into(), &broadcast_channel).await;
@@ -330,12 +339,32 @@ async fn game_loop(
                 }
                 drop(s);
             }
+            
+            GameEvent::ConfirmNextScene => {
+                let mut s = session.lock().await;
+                // Chama o update passando o evento de confirmação
+                match s.update(GameEvent::ConfirmNextScene) {
+                    UpdateResult::Advance(_) => {
+                        // Se retornou Advance, significa que todos confirmaram (ou lógica simplificada)
+                        // Agora sim mandamos avançar de verdade
+                        let _ = event_channel.send(GameEvent::AdvanceTurn).await;
+                    }
+                    _ => {} // Se não estava esperando, ignora
+                }
+            }
+
             GameEvent::PlayerAnswer { username, answer } => {
                 let mut s = session.lock().await;
                 match s.update(GameEvent::PlayerAnswer {
                     username: username.clone(),
                     answer,
                 }) {
+                    // MUDANÇA AQUI: Tratamos o WaitConfirmation
+                    UpdateResult::WaitConfirmation(feedback) => {
+                        send_server_msg(feedback, &broadcast_channel).await;
+                        // NÃO chamamos AdvanceTurn aqui! O jogo pausa e espera o /yes
+                    }
+                    // Advance só deve acontecer se não tiver wait confirmation (casos raros ou legados)
                     UpdateResult::Advance(feedback) => {
                         send_server_msg(feedback, &broadcast_channel).await;
                         let _ = event_channel.send(GameEvent::AdvanceTurn).await;
