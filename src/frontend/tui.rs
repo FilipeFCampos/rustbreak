@@ -67,8 +67,9 @@ fn handle_chat(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
     .full_width();
 
     // Help text for user commands
-    let help_text = TextView::new("ESC:quit | Enter:send | Commands: /help, /clear, /quit, ...")
-        .style(Color::Dark(BaseColor::White));
+    let help_text =
+        TextView::new("ESC: sair | Enter: enviar | Comandos: /help, /clear, /quit, ...")
+            .style(Color::Dark(BaseColor::White));
 
     let layout = LinearLayout::vertical()
         .child(Panel::new(header))
@@ -80,7 +81,7 @@ fn handle_chat(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
         )
         .child(
             Dialog::around(input)
-                .title("Message")
+                .title("Input")
                 .title_position(HAlign::Center)
                 .full_width(),
         )
@@ -151,13 +152,15 @@ fn set_username(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
             // Send to the server
             input_action(s, name);
 
-            s.add_layer(Dialog::text("Connecting to Potiguara-Q...").title("Please wait"));
+            s.add_layer(
+                Dialog::text("Conectando ao Potiguara-Q...").title("Por favor, aguarde..."),
+            );
         })
         .style(PaletteColor::Secondary);
 
-    let message = TextView::new("Please type your username below.").with_name("message");
+    let message = TextView::new("Insira seu nome de jogador abaixo.").with_name("message");
 
-    let tip = TextView::new("Press ESC to quit.")
+    let tip = TextView::new("Aperte ESC para sair.")
         .style(PaletteColor::Secondary)
         .fixed_height(1)
         .with_name("tip");
@@ -176,7 +179,7 @@ fn set_username(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
     // siv.add_fullscreen_layer(background);
 
     let popup = Dialog::around(layout)
-        .title("Welcome to Rustbreak🦀")
+        .title("Bem vindo ao Rustbreak🦀")
         .title_position(HAlign::Center);
 
     siv.add_layer(popup);
@@ -199,12 +202,12 @@ pub fn error_popup(siv: &mut Cursive, error_msg: &str) {
     let popup = Dialog::around(layout)
         .title("ERROR")
         .title_position(HAlign::Center)
-        .button("Quit", |siv| siv.quit());
+        .button("Sair", |siv| siv.quit());
 
     siv.add_layer(popup);
 }
 
 /// Creates the header string with the given username.
 pub fn make_header(username: String) -> String {
-    format!(r#"⋘ ( *^-^)ρ ⭐ WELCOME {username} ⭐ &(^0^* )⋙"#)
+    format!(r#"⋘ ( *^-^)ρ ⭐ HELLO, {username} ⭐ &(^0^* )⋙"#)
 }

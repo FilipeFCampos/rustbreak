@@ -39,10 +39,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let (socket, addr) = listener.accept().await?;
 
         println!(
-            "┌─[{}] {GREEN}New Connection!{RESET}",
+            "┌─[{}] {GREEN}Nova conexão!{RESET}",
             Local::now().format("%H:%M:%S")
         );
-        println!("└─ Address: {BLUE}{addr}{RESET}");
+        println!("└─ Endereço: {BLUE}{addr}{RESET}");
 
         let sessions_clone = Arc::clone(&sessions);
         tokio::spawn(async move { handle_connection(socket, sessions_clone, addr).await });
@@ -91,7 +91,7 @@ async fn handle_connection(
             Ok(0) => return,
             Ok(_) => {}
             Err(e) => {
-                eprintln!("{RED}ERROR reading from {addr}: {e}{RESET}");
+                eprintln!("{RED}ERRO lendo de {addr}: {e}{RESET}");
                 return;
             }
         }
@@ -289,7 +289,7 @@ async fn handle_connection(
         }
 
         println!(
-            "├─[{}] {YELLOW}'{}' disconnected.{RESET}",
+            "├─[{}] {YELLOW}'{}' desconectou.{RESET}",
             get_time(),
             username
         );
@@ -312,7 +312,7 @@ async fn game_loop(
                 let join_msg = format!("{} entrou no chat!", player);
                 send_server_msg(join_msg, &broadcast_channel).await;
                 println!(
-                    "├─[{}] {GREEN}'{}' joined the chat!{RESET}",
+                    "├─[{}] {GREEN}'{}' se juntou ao chat!{RESET}",
                     get_time(),
                     player
                 );

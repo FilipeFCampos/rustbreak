@@ -50,7 +50,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let stream = TcpStream::connect(format!("{ADDRESS}:{PORT}"))
         .await
         .expect(&format!(
-            "{RED}ERROR: Unable to connect to server. Maybe the server is offline?\n{RESET}details"
+            "{RED}ERROR: Impossível de se conectar ao servidor. Ele está offline? \n{RESET}"
         ));
 
     let (reader, writer) = stream.into_split();
@@ -148,13 +148,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                     };
 
-                    ui_job_sender.send(UIJob::Dynamic(text, 50)).ok();
+                    ui_job_sender.send(UIJob::Dynamic(text, 1)).ok();
                 }
                 EventSignal::Error(err) => {
                     let _ = sink_clone.send(Box::new(move |siv: &mut Cursive| {
                         siv.pop_layer();
-                        siv.add_layer(Dialog::text(err).title("Login Error").button(
-                            "Try Again",
+                        siv.add_layer(Dialog::text(err).title("Erro de Login").button(
+                            "Tentar Novamente",
                             |s| {
                                 s.pop_layer();
                             },
@@ -257,12 +257,12 @@ fn send_message(siv: &mut Cursive, msg: String) {
         "/help" => {
             siv.call_on_name("messages", |view: &mut TextView| {
                 view.append(
-                    "\n=== Commands ===\n
-                    /help - Show this message\n
-                    /clear - Clear messages\n
-                    /quit - Exit chat\n
-                    /scrollon - Enable auto-scroll\n
-                    /scrolloff - Disable auto-scroll\n\n",
+                    "\n=== Comandos ===\n
+                    /help - Exibe esta mensagem\n
+                    /clear - Limpa mensagens \n
+                    /quit - Sai do jogo\n
+                    /scrollon - Ativa o auto-scroll \n
+                    /scrolloff - Desativa o auto-scroll\n\n",
                 );
             });
 
@@ -288,7 +288,7 @@ fn send_message(siv: &mut Cursive, msg: String) {
         "/scrollon" => {
             enable_auto_scroll(siv);
             siv.call_on_name("messages", |view: &mut TextView| {
-                view.append("\n[Auto-scroll enabled]\n");
+                view.append("\n[Auto-scroll ativado]\n");
             });
 
             siv.call_on_name("chat_input", |view: &mut EnableableView<EditView>| {
@@ -299,7 +299,7 @@ fn send_message(siv: &mut Cursive, msg: String) {
         "/scrolloff" => {
             check_scroll_position(siv);
             siv.call_on_name("messages", |view: &mut TextView| {
-                view.append("\n[Auto-scroll disabled]\n");
+                view.append("\n[Auto-scroll desativado]\n");
             });
 
             siv.call_on_name("chat_input", |view: &mut EnableableView<EditView>| {

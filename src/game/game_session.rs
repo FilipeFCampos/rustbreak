@@ -59,15 +59,15 @@ impl GameSession {
 
     pub fn add_player(&mut self, username: &String) -> Result<(), String> {
         if self.contains(&username) {
-            return Err(format!("Player already registered: {}", username));
+            return Err(format!("Player já registrado: {}", username));
         } else if self.party.len() >= MAX_PLAYERS_PER_SESSION {
-            return Err(format!("Party already full: {}", username));
+            return Err(format!("Party já está cheia: {}", username));
         }
 
         if self.party.insert(Player::new(username.clone())) {
             Ok(())
         } else {
-            Err("Cannot add player twice".to_string())
+            Err("Não é possível adicionar o mesmo jogador duas vezes".to_string())
         }
     }
 
@@ -164,11 +164,11 @@ impl GameSession {
         full_path.push("data");
         full_path.push(format!("{}.json", path));
 
-        let file = File::open(&full_path).map_err(|_| "Failed to load scene.")?;
+        let file = File::open(&full_path).map_err(|_| "Falhou ao carregar a cena")?;
         let reader = BufReader::new(file);
 
         let game_scene: GameScene =
-            serde_json::from_reader(reader).map_err(|_| "Failed to deserialize game scene.")?;
+            serde_json::from_reader(reader).map_err(|_| "Falhou ao deserializar a cena")?;
         self.current_scene_state = GameSceneType::Normal(game_scene);
         Ok(())
     }
@@ -249,22 +249,9 @@ Boa sorte. Vocês vão precisar."#,
         // }
 
         println!(
-            "Session {} started with {} players.",
+            "Sessão {} iniciou com {} jogadores.",
             self.id,
             self.party.len()
         );
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn load_scene_1_test() {
-        //TODO
-    }
-
-    #[test]
-    fn load_nonexistent_scene_test() {
-        //TODO
     }
 }
