@@ -30,7 +30,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Resultado: game_loop nunca via as respostas dos jogadores -> ficava eternamente em "Aguardando mais respostas...".
     // AGORA: GameSession fica dentro de Arc<Mutex<_>>
     // significa que TODOS os handlers (server, players e game_loop) compartilham exatamente a MESMA sessão.
-    //agora: answer -> session.update() -> game_loop vê atualização
+    // agora: answer -> session.update() -> game_loop vê atualização
     let sessions: ServerSessions = Arc::new(Mutex::new(HashMap::<Uuid, SessionEntry>::new()));
 
     welcome_message();
@@ -101,13 +101,18 @@ async fn handle_connection(
             continue;
         }
 
-        // escopo diferente pra tentar adicionar user!
+        // escopo para manipular sessions: não fazer shadowing do 'sessions' (Arc)
         {
-            let mut sessions = sessions.lock().await;
+            // clone do Arc feito aqui caso precise mover para a task
+            // (não está em um lock ainda)
+            let sessions_arc_clone_for_spawn = Arc::clone(&sessions);
+
+            // pegamos o guard com outro nome para evitar shadowing
+            let mut sessions_map = sessions.lock().await;
             let mut available_id: Option<Uuid> = None;
 
-            // encontra alguma partida com vagas!
-            for (id, entry) in sessions.iter() {
+            // encontra alguma partida com vagas
+            for (id, entry) in sessions_map.iter() {
                 let session = entry.session.lock().await;
                 if session.party.len() < MAX_PLAYERS_PER_SESSION {
                     available_id = Some(*id);
@@ -126,50 +131,64 @@ async fn handle_connection(
             > = match available_id {
                 // Criando nova sessão
                 None => {
-                    let (broadcast_sender, broadcast_receiver) = broadcast::channel::<String>(128);
-                    let (event_sender, event_receiver) = mpsc::channel::<GameEvent>(128);
+                    let (broadcast_sender_local, broadcast_receiver_local) =
+                        broadcast::channel::<String>(128);
+                    let (event_sender_local, event_receiver_local) = mpsc::channel::<GameEvent>(128);
 
                     let new_session = Arc::new(Mutex::new(GameSession::new()));
-                    let party_id = new_session.lock().await.id;
+                    let party_id_local = new_session.lock().await.id;
 
-                    sessions.insert(
-                        party_id,
+                    sessions_map.insert(
+                        party_id_local,
                         SessionEntry::new(
                             new_session.clone(),
-                            broadcast_sender.clone(),
-                            event_sender.clone(),
+                            broadcast_sender_local.clone(),
+                            event_sender_local.clone(),
                         ),
                     );
 
-                    let entry = sessions.get_mut(&party_id).unwrap();
+                    // pegamos a entry recém inserida
+                    let entry = sessions_map.get_mut(&party_id_local).unwrap();
 
-                    // adiciona jogador numa session agora protegida por Mutex
+                    // adiciona jogador na sessão protegida por Mutex
                     let mut session_lock = entry.session.lock().await;
                     match session_lock.add_player(&username_trim) {
                         Ok(_) => {
                             drop(session_lock);
-                            let event_clone = event_sender.clone();
-                            let broadcast_clone = broadcast_sender.clone();
 
-                            tokio::spawn(
-                                async move {
-                                    game_loop(
-                                        new_session.clone(),
-                                        broadcast_sender.clone(),
-                                        event_clone,
-                                        event_receiver,
-                                    )
-                                }
-                                .await,
-                            );
-                            Ok((party_id, broadcast_clone, broadcast_receiver, event_sender))
+                            // clonar Arc fora de qualquer lock (já estamos fora do lock do session)
+                            // OBS: sessions_arc_clone_for_spawn foi clonado antes do lock
+                            let sessions_clone_for_task = sessions_arc_clone_for_spawn;
+                            let event_clone = event_sender_local.clone();
+                            let broadcast_clone = broadcast_sender_local.clone();
+                            let new_session_clone = new_session.clone();
+
+                            // spawn do game_loop corretamente
+                            tokio::spawn(async move {
+                                game_loop(
+                                    new_session_clone,
+                                    broadcast_clone,
+                                    event_clone,
+                                    event_receiver_local,
+                                    party_id_local,
+                                    sessions_clone_for_task,
+                                )
+                                .await;
+                            });
+
+                            Ok((
+                                party_id_local,
+                                broadcast_sender_local,
+                                broadcast_receiver_local,
+                                event_sender_local,
+                            ))
                         }
                         Err(err) => Err(err),
                     }
                 }
-                // tem party disponivel!!
-                Some(available_session) => {
-                    let entry = sessions.get_mut(&available_session).unwrap();
+                // tem party disponível
+                Some(available_session_id) => {
+                    let entry = sessions_map.get_mut(&available_session_id).unwrap();
                     let mut session_lock = entry.session.lock().await;
                     match session_lock.add_player(&username_trim) {
                         Ok(_) => Ok((
@@ -210,7 +229,8 @@ async fn handle_connection(
         if writer.write_all(json.as_bytes()).await.is_err()
             || writer.write_all(b"\n").await.is_err()
         {
-            if let Some(entry) = sessions.lock().await.get_mut(&party_id.unwrap()) {
+            let mut sessions_map = sessions.lock().await;
+            if let Some(entry) = sessions_map.get_mut(&party_id.unwrap()) {
                 entry.session.lock().await.remove_player(&username);
             }
             return;
@@ -272,8 +292,12 @@ async fn handle_connection(
 
             result = broadcast_receiver.recv() => {
                 if let Ok(message) = result {
-                    writer.write_all(message.as_bytes()).await.unwrap();
-                    writer.write_all(b"\n").await.unwrap();
+                    if writer.write_all(message.as_bytes()).await.is_err() {
+                        break;
+                    }
+                    if writer.write_all(b"\n").await.is_err() {
+                        break;
+                    }
                 }
             }
         }
@@ -281,19 +305,20 @@ async fn handle_connection(
 
     // desconectou!!
     {
-        if let Some(entry) = sessions.lock().await.get_mut(&party_id) {
+        let mut sessions_map = sessions.lock().await;
+        if let Some(entry) = sessions_map.get_mut(&party_id) {
             entry.session.lock().await.remove_player(&username);
 
             let leave_msg = format!("{} deixou o chat!", username);
             send_server_msg(leave_msg, &entry.broadcast).await;
         }
-
-        println!(
-            "├─[{}] {YELLOW}'{}' desconectou.{RESET}",
-            get_time(),
-            username
-        );
     }
+
+    println!(
+        "├─[{}] {YELLOW}'{}' desconectou.{RESET}",
+        get_time(),
+        username
+    );
 }
 
 async fn game_loop(
@@ -301,13 +326,11 @@ async fn game_loop(
     broadcast_channel: broadcast::Sender<String>,
     event_channel: mpsc::Sender<GameEvent>,
     mut event_receiver: mpsc::Receiver<GameEvent>,
+    party_id: Uuid,
+    sessions: ServerSessions,
 ) {
     while let Some(event) = event_receiver.recv().await {
         match event {
-            // captura o evento de um player entrar no jogo
-            // se tiver 3 players, aí sim começa
-            // fiz isso porque agora a thread do game_loop é iniciada diretamente ao criar uma sessão nova,
-            // aí pra não deixar ela rodando com só 1 player eu coloquei essa barreira.
             GameEvent::PlayerJoined(player) => {
                 let join_msg = format!("{} entrou no chat!", player);
                 send_server_msg(join_msg, &broadcast_channel).await;
@@ -382,16 +405,47 @@ async fn game_loop(
             GameEvent::GameEnding(result) => match result {
                 UpdateResult::GameOver(msg) => {
                     game_over(msg, &broadcast_channel).await;
+                    // REMOVER SESSÃO DA MEMÓRIA para que jogadores possam reconectar
+                    {
+                        let mut sessions_map = sessions.lock().await;
+                        if sessions_map.remove(&party_id).is_some() {
+                            println!(
+                                "├─[{}] {YELLOW}Sessão {} removida da memória (GameOver).{RESET}",
+                                get_time(),
+                                party_id
+                            );
+                        }
+                    }
+
                     break;
                 }
                 UpdateResult::EndGame(msg) => {
                     end_game(msg, &broadcast_channel).await;
+                    // REMOVER SESSÃO DA MEMÓRIA para que jogadores possam reconectar
+                    {
+                        let mut sessions_map = sessions.lock().await;
+                        if sessions_map.remove(&party_id).is_some() {
+                            println!(
+                                "├─[{}] {YELLOW}Sessão {} removida da memória (EndGame).{RESET}",
+                                get_time(),
+                                party_id
+                            );
+                        }
+                    }
+
                     break;
                 }
                 _ => {}
             },
         }
     }
+
+    // opcional: log quando o loop terminar (por segurança)
+    println!(
+        "├─[{}] {CYAN}game_loop() terminado para sessão {RESET}{}",
+        get_time(),
+        party_id
+    );
 }
 
 async fn end_game(scene_msg: String, broadcast: &broadcast::Sender<String>) {
