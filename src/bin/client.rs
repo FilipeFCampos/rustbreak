@@ -2,8 +2,8 @@ use cursive::style::{BaseColor, Color, Effect, Style};
 use cursive::utils::markup::StyledString;
 use cursive::views::Dialog;
 use cursive::{
-    Cursive,
     views::{EditView, EnableableView, TextView},
+    Cursive,
 };
 use rustbreak::common::messages::MessageType;
 use rustbreak::frontend::tui;
@@ -11,8 +11,8 @@ use rustbreak::frontend::tui::make_header;
 use rustbreak::game::game_scene::GameSceneType;
 use rustbreak::{
     client::{
-        ScrollState, add_scroll_callbacks, check_scroll_position, enable_auto_scroll,
-        scroll_to_bottom,
+        add_scroll_callbacks, check_scroll_position, enable_auto_scroll, scroll_to_bottom,
+        ScrollState,
     },
     common::{
         formatting::*,
@@ -24,7 +24,7 @@ use std::{error::Error, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    net::{TcpStream, tcp::OwnedWriteHalf},
+    net::{tcp::OwnedWriteHalf, TcpStream},
     sync::Mutex,
 };
 
@@ -33,8 +33,6 @@ struct ClientData {
     writer: Arc<Mutex<OwnedWriteHalf>>,
 }
 
-// TODO: LOUCURAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-// mas vai passar..
 enum UIJob {
     Instant(String),
     Dynamic(String, u64),
@@ -122,7 +120,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         };
 
                         ui_job_sender
-                            .send(UIJob::Instant(str.source().to_string()))
+                            .send(UIJob::Dynamic(str.source().to_string(), 30))
                             .ok();
                     }
                 },
@@ -148,7 +146,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                     };
 
-                    ui_job_sender.send(UIJob::Dynamic(text, 1)).ok();
+                    ui_job_sender.send(UIJob::Dynamic(text, 40)).ok();
                 }
                 EventSignal::Error(err) => {
                     let _ = sink_clone.send(Box::new(move |siv: &mut Cursive| {

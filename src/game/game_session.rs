@@ -240,14 +240,6 @@ Boa sorte. Vocês vão precisar."#,
         self.has_started = true;
         self.current_scene_state = GameSceneType::Prelude(self.get_prelude_text());
 
-        // if let Some(scene) = self.remaining_scenes.pop_front() {
-        //     if self.load_scene(scene.as_str()).is_ok() {
-        //         println!("Initial scene loaded successfully!");
-        //     } else {
-        //         println!("Error loading initial scene.");
-        //     }
-        // }
-
         println!(
             "Sessão {} iniciou com {} jogadores.",
             self.id,
