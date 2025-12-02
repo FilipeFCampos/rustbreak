@@ -2,12 +2,8 @@ use cursive::style::{BaseColor, Color, Effect, Style};
 use cursive::utils::markup::StyledString;
 use cursive::views::Dialog;
 use cursive::{
-    views::{EditView, EnableableView, TextView},
     Cursive,
-<<<<<<< Updated upstream
-=======
     views::{EditView, EnableableView, TextView, ScrollView, NamedView},
->>>>>>> Stashed changes
 };
 use rustbreak::common::messages::MessageType;
 use rustbreak::frontend::tui;
@@ -15,12 +11,7 @@ use rustbreak::frontend::tui::make_header;
 use rustbreak::game::game_scene::GameSceneType;
 use rustbreak::{
     client::{
-<<<<<<< Updated upstream
-        add_scroll_callbacks, check_scroll_position, enable_auto_scroll, scroll_to_bottom,
-        ScrollState,
-=======
         ScrollState, add_scroll_callbacks, check_scroll_position, enable_auto_scroll
->>>>>>> Stashed changes
     },
     common::{
         formatting::*,
@@ -28,16 +19,11 @@ use rustbreak::{
         shared::*,
     },
 };
-<<<<<<< Updated upstream
-use std::time::Duration;
-use std::{error::Error, sync::Arc};
-=======
 use std::{error::Error, sync::Arc};
 use tokio::sync::mpsc;
->>>>>>> Stashed changes
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    net::{tcp::OwnedWriteHalf, TcpStream},
+    net::{TcpStream, tcp::OwnedWriteHalf},
     sync::Mutex,
     time::{sleep, Duration},
 };
@@ -47,16 +33,12 @@ struct ClientData {
     writer: Arc<Mutex<OwnedWriteHalf>>,
 }
 
-<<<<<<< Updated upstream
-=======
-// TODO: LOUCURAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-// mas vai passar..
+// Arquitetura de Jobs para UI (evita travamentos)
 enum UIJob {
     Instant(StyledString),
     Dynamic(String, u64),
 }
 
->>>>>>> Stashed changes
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     // Initialize Cursive TUI and load theme
@@ -79,7 +61,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     });
 
     // Builds TUI structure as layer stack
-    // Please read the documentation before adding new layers
     tui::build_tui(&mut siv, send_message);
 
     add_scroll_callbacks(&mut siv);
@@ -88,10 +69,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut lines = reader.lines();
     let sink = siv.cb_sink().clone();
 
+    // Canais para comunicação entre threads
     let (event_sender, mut event_receiver) = mpsc::unbounded_channel::<EventSignal>();
     let (ui_job_sender, mut ui_job_receiver) = mpsc::unbounded_channel::<UIJob>();
 
-    // thread de leitura de ações no buffer
+    // 1. THREAD DE LEITURA (Rede -> Eventos Internos)
     tokio::spawn(async move {
         while let Ok(Some(line)) = lines.next_line().await {
             if let Ok(msg) = serde_json::from_str::<ChatMessage>(&line) {
@@ -101,7 +83,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         }
 
-        // The connection dropped, so let’s notify the graphical interface (Cursive) to close.
+        // Conexão caiu
         let _ = sink.send(Box::new(|siv: &mut Cursive| {
             siv.add_layer(
                 Dialog::text("A conexão com o servidor foi encerrada. \n(O servidor pode ter sido desligado ou reiniciado)")
@@ -113,7 +95,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let sink_clone = siv.cb_sink().clone();
 
-    // thread de leitura de ações na fila e que define o método correto de impressão
+    // 2. THREAD DE LÓGICA (Eventos Internos -> Jobs de UI)
     tokio::spawn(async move {
         while let Some(event) = event_receiver.recv().await {
             match event {
@@ -123,10 +105,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             "┌─[{}]\n└─ {} => {}\n",
                             msg.timestamp, msg.username, msg.content
                         ));
-
-                        ui_job_sender
-                            .send(UIJob::Instant(str.source().to_string()))
-                            .ok();
+                        ui_job_sender.send(UIJob::Instant(str)).ok();
                     }
                     MessageType::SystemNotification => {
                         let str = if msg.username == "ERROR" {
@@ -137,157 +116,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         } else {
                             StyledString::plain(format!("\n[{}]\n", msg.content))
                         };
-
-                        ui_job_sender
-                            .send(UIJob::Dynamic(str.source().to_string(), 30))
-                            .ok();
-                    }
-                },
-                EventSignal::GameScene(scene) => {
-                    let text: String;
-                    match scene {
-                        GameSceneType::Prelude(p) => text = p,
-                        GameSceneType::Normal(scene) => {
-                            let description = scene.description.clone();
-                            let code = scene.code.clone();
-
-                            let txt = format!(
-                                "\n=== Cenário {} ===\n\n{}\n\nCódigo:\n{}\n\nOpções:\nA) {}\nB) {}\nC) {}\nD) {}\n",
-                                scene.id,
-                                description,
-                                code,
-                                scene.options.a,
-                                scene.options.b,
-                                scene.options.c,
-                                scene.options.d
-                            );
-                            text = txt;
-                        }
-                    };
-
-                    ui_job_sender.send(UIJob::Dynamic(text, 40)).ok();
-                }
-                EventSignal::Error(err) => {
-                    let _ = sink_clone.send(Box::new(move |siv: &mut Cursive| {
-                        siv.pop_layer();
-                        siv.add_layer(Dialog::text(err).title("Erro de Login").button(
-                            "Tentar Novamente",
-                            |s| {
-                                s.pop_layer();
-                            },
-                        ));
-                    }));
-                }
-                EventSignal::Shutdown => {
-                    let _ = sink_clone
-                        .send(Box::new(|siv: &mut Cursive| {
-                            siv.add_layer(
-                                Dialog::text("Agradecemos por ter jogado Rustbreak! ;p")
-                                    .title("Fim do Jogo")
-                                    .button("Sair", |s| s.quit()),
-                            );
-                        }))
-                        .ok();
-                }
-                EventSignal::Ok(name) => {
-                    sink_clone
-                        .send(Box::new(move |siv: &mut Cursive| {
-                            siv.pop_layer();
-                            siv.pop_layer();
-                            siv.call_on_name("header", |view: &mut TextView| {
-                                view.set_content(make_header(name));
-                            });
-                        }))
-                        .unwrap(),
-
-                    EventSignal::Scene(scene) => {
-                        let description = scene.description.clone();
-                        let code = scene.code.clone();
-
-                        let formatted_scene = format!(
-                            "\n=== Scene {} ===\n\n{}\n\nCódigo:\n{}\n\nOpções:\nA) {}\nB) {}\nC) {}\nD) {}\n",
-                            scene.id,
-                            description,
-                            code,
-                            scene.options.a,
-                            scene.options.b,
-                            scene.options.c,
-                            scene.options.d
-                        );
-
-                        let _ = sink.send(Box::new(move |siv: &mut Cursive| {
-                            // Shows scene in chat
-                            siv.call_on_name("messages", |view: &mut TextView| {
-                                view.append(formatted_scene);
-                            });
-
-                            scroll_to_bottom(siv);
-                        }));
-                    }
-                    EventSignal::Shutdown => {
-                        // TODO: está acontecendo algum panic! ao finalizar, consegui ver pelo debug. Não está impactando
-                        // nas outras partidas, mas é algo estranho
-
-                        // primeiro exibe uma mensagem de finalização e depois realmente quita.
-                        let _ = sink
-                            .send(Box::new(|siv: &mut Cursive| {
-                                siv.add_layer(Dialog::info("Fim de Jogo!"));
-
-                                let cb = siv.cb_sink().clone();
-
-                                tokio::spawn(async move {
-                                    tokio::time::sleep(Duration::from_secs(5)).await;
-                                    cb.send(Box::new(|s| s.quit())).unwrap();
-                                });
-                            }))
-                            .unwrap();
-                    }
-                }
-            }
-        }
-
-        // The connection dropped, so let’s notify the graphical interface (Cursive) to close.
-        let _ = sink.send(Box::new(|siv: &mut Cursive| {
-            siv.add_layer(
-                Dialog::text("A conexão com o servidor foi encerrada. \n(O servidor pode ter sido desligado ou reiniciado)")
-                    .title("Desconectado")
-                    .button("Sair", |s| s.quit())
-            );
-        }));
-    });
-
-<<<<<<< Updated upstream
-=======
-    let sink_clone = siv.cb_sink().clone();
-
-    // thread de leitura de ações na fila e que define o método correto de impressão
-    tokio::spawn(async move {
-        while let Some(event) = event_receiver.recv().await {
-            match event {
-                EventSignal::Message(msg) => match msg.message_type {
-                    MessageType::UserMessage => {
-                        let str = StyledString::plain(format!(
-                            "┌─[{}]\n└─ {} => {}\n",
-                            msg.timestamp, msg.username, msg.content
-                        ));
-
-                        ui_job_sender
-                            .send(UIJob::Instant(str))
-                            .ok();
-                    }
-                    MessageType::SystemNotification => {
-                        let str = if msg.username == "ERROR" {
-                            StyledString::styled(
-                                format!("\n[ERROR: {}]\n", msg.content),
-                                Style::from(Color::Dark(BaseColor::Red)).combine(Effect::Bold),
-                            )
-                        } else {
-                            StyledString::plain(format!("\n[{}]\n", msg.content))
-                        };
-
-                        ui_job_sender
-                            .send(UIJob::Instant(str))
-                            .ok();
+                        ui_job_sender.send(UIJob::Instant(str)).ok();
                     }
                 },
                 EventSignal::GameScene(scene) => {
@@ -300,52 +129,40 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                             let txt = format!(
                                 "\n=== Cenário {} ===\n\n{}\n\nCódigo:\n{}\n\nOpções:\nA) {}\nB) {}\nC) {}\nD) {}",
-                                scene.id,
-                                description,
-                                code,
-                                scene.options.a,
-                                scene.options.b,
-                                scene.options.c,
-                                scene.options.d
+                                scene.id, description, code, scene.options.a, scene.options.b, scene.options.c, scene.options.d
                             );
                             text = txt;
                         }
                     };
-
-                    ui_job_sender.send(UIJob::Dynamic(text, 50)).ok();
+                    // Envia para o typewriter com 40ms de delay
+                    ui_job_sender.send(UIJob::Dynamic(text, 40)).ok();
                 }
                 EventSignal::Error(err) => {
                     let _ = sink_clone.send(Box::new(move |siv: &mut Cursive| {
                         siv.pop_layer();
-                        siv.add_layer(Dialog::text(err).title("Login Error").button(
-                            "Try Again",
-                            |s| {
-                                s.pop_layer();
-                            },
+                        siv.add_layer(Dialog::text(err).title("Erro de Login").button(
+                            "Tentar novamente",
+                            |s| { s.pop_layer(); },
                         ));
                     }));
                 }
                 EventSignal::Shutdown => {
-                    let _ = sink_clone
-                        .send(Box::new(|siv: &mut Cursive| {
-                            siv.add_layer(
-                                Dialog::text("Agradecemos por ter jogado Rustbreak! ;p")
-                                    .title("Fim do Jogo")
-                                    .button("Sair", |s| s.quit()),
-                            );
-                        }))
-                        .ok();
+                    let _ = sink_clone.send(Box::new(|siv: &mut Cursive| {
+                        siv.add_layer(
+                            Dialog::text("Agradecemos por ter jogado Rustbreak! ;p")
+                                .title("Fim do Jogo")
+                                .button("Sair", |s| s.quit()),
+                        );
+                    })).ok();
                 }
                 EventSignal::Ok(name) => {
-                    sink_clone
-                        .send(Box::new(move |siv: &mut Cursive| {
-                            siv.pop_layer();
-                            siv.pop_layer();
-                            siv.call_on_name("header", |view: &mut TextView| {
-                                view.set_content(make_header(name));
-                            });
-                        }))
-                        .ok();
+                    sink_clone.send(Box::new(move |siv: &mut Cursive| {
+                        siv.pop_layer();
+                        siv.pop_layer();
+                        siv.call_on_name("header", |view: &mut TextView| {
+                            view.set_content(make_header(name));
+                        });
+                    })).ok();
                 }
             }
         }
@@ -353,17 +170,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let sink_clone = siv.cb_sink().clone();
 
-    // thread que recebe as mensagens na fila e imprime DE FORMA SÍNCRONA!!
+    // 3. THREAD DE RENDERIZAÇÃO (Jobs de UI -> Cursive)
     tokio::spawn(async move {
         while let Some(job) = ui_job_receiver.recv().await {
             match job {
                 UIJob::Instant(str) => {
-                    sink_clone
-                        .send(Box::new(move |siv| {
-                            siv.call_on_name("messages", |v: &mut TextView| {
-                                v.append(str);
-                            });
-                            let should_scroll = if let Some(cd) = siv.user_data::<ClientData>() {
+                    sink_clone.send(Box::new(move |siv| {
+                        siv.call_on_name("messages", |v: &mut TextView| {
+                            v.append(str);
+                        });
+                        
+                        // Scroll com estratégia StickToBottom
+                        let should_scroll = if let Some(cd) = siv.user_data::<ClientData>() {
                             cd.scroll_state.auto_scroll
                         } else { true };
 
@@ -375,51 +193,45 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     })).ok();
                 }
                 UIJob::Dynamic(text, delay_ms) => {
-                    sink_clone
-                        .send(Box::new(move |siv| {
-                            siv.call_on_name("chat_input", |v: &mut EnableableView<EditView>| {
-                                v.disable();
-                            });
-                        }))
-                        .ok();
+                    // Bloqueia Input
+                    sink_clone.send(Box::new(move |siv| {
+                        siv.call_on_name("chat_input", |v: &mut EnableableView<EditView>| {
+                            v.disable();
+                        });
+                    })).ok();
 
+                    // Typewriter effect
                     for ch in text.chars() {
-                        sink_clone
-                            .send(Box::new(move |s| {
-                                s.call_on_name("messages", |view: &mut TextView| {
-                                    view.append(ch);
+                        sink_clone.send(Box::new(move |s| {
+                            s.call_on_name("messages", |view: &mut TextView| {
+                                view.append(ch);
+                            });
+
+                            let should_scroll = if let Some(cd) = s.user_data::<ClientData>() {
+                                cd.scroll_state.auto_scroll
+                            } else { true };
+
+                            if should_scroll {
+                                s.call_on_name("chat_scroll", |view: &mut ScrollView<NamedView<TextView>>| {
+                                    view.set_scroll_strategy(cursive::view::ScrollStrategy::StickToBottom);
                                 });
-
-
-                                let should_scroll = if let Some(cd) = s.user_data::<ClientData>() {
-                                    cd.scroll_state.auto_scroll
-                                } else { true };
-
-                                if should_scroll {
-                                    s.call_on_name("chat_scroll", |view: &mut ScrollView<NamedView<TextView>>| {
-                                        view.set_scroll_strategy(cursive::view::ScrollStrategy::StickToBottom);
-                                    });
-                                }
-                            }))
-                            .ok();
+                            }
+                        })).ok();
 
                         sleep(Duration::from_millis(delay_ms)).await;
                     }
 
-                    // reabilita input ao final
-                    sink_clone
-                        .send(Box::new(|s| {
-                            s.call_on_name("chat_input", |v: &mut EnableableView<EditView>| {
-                                v.enable();
-                            });
-                        }))
-                        .ok();
+                    // Reabilita input ao final
+                    sink_clone.send(Box::new(|s| {
+                        s.call_on_name("chat_input", |v: &mut EnableableView<EditView>| {
+                            v.enable();
+                        });
+                    })).ok();
                 }
             }
         }
     });
 
->>>>>>> Stashed changes
     siv.run();
     let _ = writer.lock().await.shutdown().await;
 
@@ -427,10 +239,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 /// Sends a message to the server and handle client-side commands.
-///
-/// ### Parameters
-/// - `siv`: The TUI struct from the Cursive crate;
-/// - `msg`: The message to be processed/sent.
 fn send_message(siv: &mut Cursive, msg: String) {
     if msg.is_empty() {
         return;

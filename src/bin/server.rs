@@ -6,11 +6,7 @@ use rustbreak::common::{
 };
 use rustbreak::game::game_scene::GameSceneType;
 use rustbreak::game::game_session::{
-<<<<<<< Updated upstream
-    GameEvent, GameSession, UpdateResult, MAX_PLAYERS_PER_SESSION,
-=======
     GameEvent, GameSession, PLAYERS_PER_SESSION, UpdateResult,
->>>>>>> Stashed changes
 };
 use std::collections::HashMap;
 use std::time::Duration;
@@ -410,7 +406,6 @@ async fn game_loop(
                     username: username.clone(),
                     answer,
                 }) {
-                    // MUDANÇA AQUI: Tratamos o WaitConfirmation
                     UpdateResult::WaitConfirmation(feedback) => {
                         send_server_msg(feedback, &broadcast_channel).await;
                         // NÃO chamamos AdvanceTurn aqui! O jogo pausa e espera o /yes

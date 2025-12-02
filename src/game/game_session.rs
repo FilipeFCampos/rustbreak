@@ -1,57 +1,47 @@
-use crate::game::game_scene::{GameScene, GameSceneState};
+use crate::game::game_scene::{GameScene, GameSceneType};
 use crate::game::player::Player;
+use chrono::Local;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
 use uuid::Uuid;
 
-<<<<<<< Updated upstream
-pub const MAX_PLAYERS_PER_SESSION: usize = 3;
-=======
 pub const PLAYERS_PER_SESSION: usize = 3;
->>>>>>> Stashed changes
 
 pub enum GameEvent {
     PlayerJoined(String),
     PlayerAnswer { username: String, answer: String },
     AdvanceTurn,
-<<<<<<< Updated upstream
-=======
     GameEnding(UpdateResult),
-    ConfirmNextScene,
->>>>>>> Stashed changes
+    ConfirmNextScene, // [NOVO] Evento de confirmação
 }
 
 pub enum UpdateResult {
     Advance(String),          // String guarda a mensagem de erro ou de acerto do cenário!
     Continue(Option<String>), // tem String pra exibir a resposta do usuário diante da questão, None pra qualquer outra coisa
-<<<<<<< Updated upstream
-    GameOver(String),         // guarda a mensagem de erro do cenário
-=======
     EndGame(String),
     GameOver(String), // guarda a mensagem de erro do cenário
-    WaitConfirmation(String),
->>>>>>> Stashed changes
+    WaitConfirmation(String), // [NOVO] Resultado para aguardar confirmação
 }
 
 #[derive(Clone)]
 pub struct GameSession {
     pub id: Uuid,
-    pub current_scene_state: GameSceneState,
+    pub current_scene_state: GameSceneType,
     pub party: HashSet<Player>,
     pub has_started: bool,
     answers: HashMap<String, bool>,
     remaining_answers: i8,
     remaining_scenes: VecDeque<String>,
-    pub waiting_for_confirmation: bool,
+    pub waiting_for_confirmation: bool, // [NOVO] Flag de espera
 }
 
 impl GameSession {
     pub fn new() -> Self {
         Self {
             id: Uuid::new_v4(),
-            current_scene_state: GameSceneState::Prelude,
+            current_scene_state: GameSceneType::Prelude(String::new()),
             party: HashSet::new(),
             answers: HashMap::new(),
             has_started: false,
@@ -64,23 +54,24 @@ impl GameSession {
                 "scene_5".into(),
                 "scene_6".into(),
                 "scene_7".into(),
+                "final_scene".into(),
             ]
             .into(),
-            waiting_for_confirmation: false,
+            waiting_for_confirmation: false, // Inicializa falso
         }
     }
 
     pub fn add_player(&mut self, username: &String) -> Result<(), String> {
         if self.contains(&username) {
-            return Err(format!("Player already registered: {}", username));
+            return Err(format!("Player já registrado: {}", username));
         } else if self.party.len() >= PLAYERS_PER_SESSION {
-            return Err(format!("Party already full: {}", username));
+            return Err(format!("Party já está cheia: {}", username));
         }
 
         if self.party.insert(Player::new(username.clone())) {
             Ok(())
         } else {
-            Err("Cannot add player twice".to_string())
+            Err("Não é possível adicionar o mesmo jogador duas vezes".to_string())
         }
     }
 
@@ -99,6 +90,7 @@ impl GameSession {
         }
 
         match event {
+            // [NOVO] Lógica de confirmação
             GameEvent::ConfirmNextScene => {
                 if self.waiting_for_confirmation {
                     self.waiting_for_confirmation = false;
@@ -107,12 +99,13 @@ impl GameSession {
                 UpdateResult::Continue(None)
             }
             GameEvent::PlayerAnswer { username, answer } => {
+                // [NOVO] Se estiver esperando confirmação, ignora respostas
                 if self.waiting_for_confirmation {
                     return UpdateResult::Continue(None);
                 }
 
                 let scene = match &self.current_scene_state {
-                    GameSceneState::Normal(scene) => scene,
+                    GameSceneType::Normal(scene) => scene,
                     _ => return UpdateResult::Continue(None),
                 };
 
@@ -156,12 +149,15 @@ impl GameSession {
                 );
 
                 count_result.push_str(&text_result);
+                
+                // [NOVO] Instrução de confirmação
                 count_result.push_str("\n\nDigitem /yes para continuar...");
 
                 if self.remaining_scenes.is_empty() {
                     return UpdateResult::EndGame(text_result);
                 }
 
+                // [NOVO] Ativa espera e retorna WaitConfirmation
                 self.waiting_for_confirmation = true;
                 UpdateResult::WaitConfirmation(count_result)
             }
@@ -181,7 +177,7 @@ impl GameSession {
 
     pub fn get_scene_json(&self) -> Option<String> {
         match &self.current_scene_state {
-            GameSceneState::Normal(scene) => serde_json::to_string(scene).ok(),
+            GameSceneType::Normal(scene) => serde_json::to_string(scene).ok(),
             _ => None,
         }
     }
@@ -191,17 +187,15 @@ impl GameSession {
         full_path.push("data");
         full_path.push(format!("{}.json", path));
 
-        let file = File::open(&full_path).map_err(|_| "Failed to load scene.")?;
+        let file = File::open(&full_path).map_err(|_| "Falhou ao carregar a cena")?;
         let reader = BufReader::new(file);
 
         let game_scene: GameScene =
-            serde_json::from_reader(reader).map_err(|_| "Failed to deserialize game scene.")?;
-        self.current_scene_state = GameSceneState::Normal(game_scene);
+            serde_json::from_reader(reader).map_err(|_| "Falhou ao deserializar a cena.")?;
+        self.current_scene_state = GameSceneType::Normal(game_scene);
         Ok(())
     }
 
-<<<<<<< Updated upstream
-=======
     fn get_prelude_text(&self) -> String {
         let current_date = Local::now().format("%d/%m/%Y %H:%M").to_string();
         format!(
@@ -255,33 +249,30 @@ STATUS DA SESSÃO: JOGADORES CONECTADOS: {}
 
 O chat de vocês está aberto. Discutam.
 O Saguão espera.
-Boa sorte. Vocês vão precisar.
-
-"#,
+Boa sorte. Vocês vão precisar."#,
             current_date,
             self.party.len()
         )
     }
 
->>>>>>> Stashed changes
     pub fn begin_game(&mut self) {
-        // Se já havia iniciado, pula
         if self.has_started {
             return;
         }
 
         self.has_started = true;
-        if let Some(scene) = self.remaining_scenes.pop_front() {
-            let res = self.load_scene(scene.as_str());
-            if res.is_err() {
-                println!("Error loading initial scene.");
-            } else {
-                println!("Initial scene loaded successfully!");
-            }
-        }
+        self.current_scene_state = GameSceneType::Prelude(self.get_prelude_text());
+
+        // if let Some(scene) = self.remaining_scenes.pop_front() {
+        //     if self.load_scene(scene.as_str()).is_ok() {
+        //         println!("Initial scene loaded successfully!");
+        //     } else {
+        //         println!("Error loading initial scene.");
+        //     }
+        // }
 
         println!(
-            "Session {} started with {} players.",
+            "Sessão {} iniciou com {} jogadores.",
             self.id,
             self.party.len()
         );
