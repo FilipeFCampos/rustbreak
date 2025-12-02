@@ -133,7 +133,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             let code = scene.code.clone();
 
                             let txt = format!(
-                                "\n=== Cenário {} ===\n\n{}\n\nCódigo:\n{}\n\nOpções:\nA) {}\nB) {}\nC) {}\nD) {}",
+                                "\n=== Cenário {} ===\n\n{}\n\nCódigo:\n{}\n\nOpções:\nA) {}\nB) {}\nC) {}\nD) {}\n",
                                 scene.id,
                                 description,
                                 code,
