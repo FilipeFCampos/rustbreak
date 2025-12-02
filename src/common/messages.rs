@@ -1,4 +1,4 @@
-use crate::game::game_scene::{GameScene, GameSceneType};
+use crate::game::game_scene::GameSceneType;
 use serde::{Deserialize, Serialize};
 /// Represents a message sent to the chat.
 ///

@@ -1,5 +1,4 @@
 use chrono::Local;
-use cursive::event::Event;
 use rustbreak::common::{
     formatting::*,
     messages::{ChatMessage, EventSignal, MessageType},
@@ -7,9 +6,8 @@ use rustbreak::common::{
 };
 use rustbreak::game::game_scene::GameSceneType;
 use rustbreak::game::game_session::{
-    GameEvent, GameSession, MAX_PLAYERS_PER_SESSION, UpdateResult,
+    GameEvent, GameSession, UpdateResult, MAX_PLAYERS_PER_SESSION,
 };
-use rustbreak::handlers::server_handlers::{ServerSessions, SessionEntry};
 use std::collections::HashMap;
 use std::time::Duration;
 use std::{error::Error, sync::Arc};
@@ -17,9 +15,30 @@ use tokio::sync::mpsc;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{TcpListener, TcpStream},
-    sync::{Mutex, broadcast},
+    sync::{broadcast, Mutex},
 };
 use uuid::Uuid;
+
+pub struct SessionEntry {
+    pub session: Arc<Mutex<GameSession>>,
+    pub broadcast: broadcast::Sender<String>,
+    pub event_channel: mpsc::Sender<GameEvent>,
+}
+
+impl SessionEntry {
+    pub fn new(
+        session: Arc<Mutex<GameSession>>,
+        broadcast: broadcast::Sender<String>,
+        event_channel: mpsc::Sender<GameEvent>,
+    ) -> Self {
+        Self {
+            session,
+            broadcast,
+            event_channel,
+        }
+    }
+}
+pub type ServerSessions = Arc<Mutex<HashMap<Uuid, SessionEntry>>>;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -76,7 +95,7 @@ async fn handle_connection(
     let mut broadcast_sender: Option<broadcast::Sender<String>> = None;
     let mut event_sender: Option<mpsc::Sender<GameEvent>> = None; // canal que possibilita o isolamento entre handle_connection e game_loop
     // com essa queue, handle_connection consegue empilhar eventos daquela sessão que serão lidos paralelamente pelo game_loop
-    let mut event_receiver: Option<mpsc::Receiver<GameEvent>> = None;
+    let event_receiver: Option<mpsc::Receiver<GameEvent>> = None;
     // enquanto o event_channel permite o handle_connection empilhar, o event_receiver é justamente o observador do game_loop
     // dessa ação, desempilhando as ações e podendo tomar decisões
 
@@ -133,7 +152,8 @@ async fn handle_connection(
                 None => {
                     let (broadcast_sender_local, broadcast_receiver_local) =
                         broadcast::channel::<String>(128);
-                    let (event_sender_local, event_receiver_local) = mpsc::channel::<GameEvent>(128);
+                    let (event_sender_local, event_receiver_local) =
+                        mpsc::channel::<GameEvent>(128);
 
                     let new_session = Arc::new(Mutex::new(GameSession::new()));
                     let party_id_local = new_session.lock().await.id;
