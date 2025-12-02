@@ -160,7 +160,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         siv.pop_layer();
                         siv.pop_layer();
                         siv.call_on_name("header", |view: &mut TextView| {
-                            view.set_content(make_header(name));
+                            view.set_content(make_header(name.trim().to_string()));
                         });
                     })).ok();
                 }

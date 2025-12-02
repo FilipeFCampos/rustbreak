@@ -89,11 +89,11 @@ async fn handle_connection(
     let mut reader = BufReader::new(reader);
     let mut username = String::new();
     // temos esses quatro dados primordiais
-    let mut party_id: Option<Uuid> = None; // auto-explicativo, eh o id da sessão a qual o usuário pertence;
+    let party_id: Option<Uuid>; // auto-explicativo, eh o id da sessão a qual o usuário pertence;
     // antes era mais útil, talvez possamos tirar
-    let mut broadcast_receiver: Option<broadcast::Receiver<String>> = None; // canal de comunicação do servidor para todos os jogadores
-    let mut broadcast_sender: Option<broadcast::Sender<String>> = None;
-    let mut event_sender: Option<mpsc::Sender<GameEvent>> = None; // canal que possibilita o isolamento entre handle_connection e game_loop
+    let broadcast_receiver: Option<broadcast::Receiver<String>>; // canal de comunicação do servidor para todos os jogadores
+    let broadcast_sender: Option<broadcast::Sender<String>>;
+    let event_sender: Option<mpsc::Sender<GameEvent>>; // canal que possibilita o isolamento entre handle_connection e game_loop
     // com essa queue, handle_connection consegue empilhar eventos daquela sessão que serão lidos paralelamente pelo game_loop
     let event_receiver: Option<mpsc::Receiver<GameEvent>> = None;
     // enquanto o event_channel permite o handle_connection empilhar, o event_receiver é justamente o observador do game_loop
