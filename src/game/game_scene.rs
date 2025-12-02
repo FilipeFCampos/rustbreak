@@ -19,9 +19,8 @@ pub struct GameScene {
     pub error_msg: String,
 }
 
-#[derive(Debug, Clone)]
-pub enum GameSceneState {
-    Prelude,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum GameSceneType {
+    Prelude(String),
     Normal(GameScene),
-    Ending(GameScene),
 }

@@ -4,7 +4,9 @@ use cursive::{
     event::{Event, Key},
     theme::{BaseColor, Color, PaletteColor},
     traits::*,
-    views::{Dialog, DummyView, EditView, LinearLayout, Panel, ScrollView, TextView},
+    views::{
+        Dialog, DummyView, EditView, EnableableView, LinearLayout, Panel, ScrollView, TextView,
+    },
 };
 
 use crate::client::add_scroll_callbacks;
@@ -56,16 +58,18 @@ fn handle_chat(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
         .full_width();
 
     // Input area
-    let input = EditView::new()
-        .on_submit(move |s, text| input_action(s, text.to_string()))
-        .with_name("input")
-        .max_height(3)
-        .min_width(50)
-        .full_width();
+    let input = EnableableView::new(
+        EditView::new().on_submit(move |s, text| input_action(s, text.to_string())),
+    )
+    .with_name("chat_input")
+    .max_height(3)
+    .min_width(50)
+    .full_width();
 
     // Help text for user commands
-    let help_text = TextView::new("ESC:quit | Enter:send | Commands: /help, /clear, /quit, ...")
-        .style(Color::Dark(BaseColor::White));
+    let help_text =
+        TextView::new("ESC: sair | Enter: enviar | Comandos: /help, /clear, /quit, ...")
+            .style(Color::Dark(BaseColor::White));
 
     let layout = LinearLayout::vertical()
         .child(Panel::new(header))
@@ -77,7 +81,7 @@ fn handle_chat(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
         )
         .child(
             Dialog::around(input)
-                .title("Message")
+                .title("Input")
                 .title_position(HAlign::Center)
                 .full_width(),
         )
@@ -92,32 +96,42 @@ fn handle_chat(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
 
     // Global keybindinds
     siv.add_global_callback(Key::Esc, |s| s.quit());
+
     siv.add_global_callback('/', |s| {
-        s.call_on_name("input", |view: &mut EditView| {
-            view.set_content("/");
+        s.call_on_name("chat_input", |view: &mut EnableableView<EditView>| {
+            if view.is_enabled() {
+                view.get_inner_mut().set_content("/");
+                // view.get_inner_mut().take_focus(); // Opcional
+            }
         });
     });
 
     siv.add_global_callback(Event::Unknown(vec![127]), |s| {
-        s.call_on_name("input", |view: &mut EditView| {
-            let mut content = view.get_content().to_string();
-            content.pop();
-            view.set_content(content);
+        s.call_on_name("chat_input", |view: &mut EnableableView<EditView>| {
+            if view.is_enabled() {
+                let mut content = view.get_inner_mut().get_content().to_string();
+                content.pop();
+                view.get_inner_mut().set_content(content);
+            }
         });
     });
 
     siv.add_global_callback(Event::Unknown(vec![8]), |s| {
-        s.call_on_name("input", |view: &mut EditView| {
-            let mut content = view.get_content().to_string();
-            let mut chars = content.chars();
-            chars.next();
-            view.set_content(chars.as_str());
+        s.call_on_name("chat_input", |view: &mut EnableableView<EditView>| {
+            if view.is_enabled() {
+                let content = view.get_inner_mut().get_content().to_string();
+                let mut chars = content.chars();
+                chars.next();
+                view.get_inner_mut().set_content(chars.as_str());
+            }
         });
     });
 
     siv.add_global_callback(Event::CtrlChar('u'), |s| {
-        s.call_on_name("input", |view: &mut EditView| {
-            view.set_content("");
+        s.call_on_name("chat_input", |view: &mut EnableableView<EditView>| {
+            if view.is_enabled() {
+                view.get_inner_mut().set_content("");
+            }
         });
     });
 }
@@ -138,13 +152,15 @@ fn set_username(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
             // Send to the server
             input_action(s, name);
 
-            s.add_layer(Dialog::text("Connecting to Potiguara-Q...").title("Please wait"));
+            s.add_layer(
+                Dialog::text("Conectando ao Potiguara-Q...").title("Por favor, aguarde..."),
+            );
         })
         .style(PaletteColor::Secondary);
 
-    let message = TextView::new("Please type your username below.").with_name("message");
+    let message = TextView::new("Insira seu nome de jogador abaixo.").with_name("message");
 
-    let tip = TextView::new("Press ESC to quit.")
+    let tip = TextView::new("Aperte ESC para sair.")
         .style(PaletteColor::Secondary)
         .fixed_height(1)
         .with_name("tip");
@@ -163,7 +179,7 @@ fn set_username(siv: &mut Cursive, input_action: fn(&mut Cursive, String)) {
     // siv.add_fullscreen_layer(background);
 
     let popup = Dialog::around(layout)
-        .title("Welcome to Rustbreak🦀")
+        .title("Bem vindo ao Rustbreak🦀")
         .title_position(HAlign::Center);
 
     siv.add_layer(popup);
@@ -186,12 +202,12 @@ pub fn error_popup(siv: &mut Cursive, error_msg: &str) {
     let popup = Dialog::around(layout)
         .title("ERROR")
         .title_position(HAlign::Center)
-        .button("Quit", |siv| siv.quit());
+        .button("Sair", |siv| siv.quit());
 
     siv.add_layer(popup);
 }
 
 /// Creates the header string with the given username.
 pub fn make_header(username: String) -> String {
-    format!(r#"⋘ ( *^-^)ρ ⭐ WELCOME {username} ⭐ &(^0^* )⋙"#)
+    format!(r#"⋘ ( *^-^)ρ ⭐ HELLO, {username} ⭐ &(^0^* )⋙"#)
 }
