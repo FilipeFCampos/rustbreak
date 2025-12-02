@@ -209,5 +209,5 @@ pub fn error_popup(siv: &mut Cursive, error_msg: &str) {
 
 /// Creates the header string with the given username.
 pub fn make_header(username: String) -> String {
-    format!(r#"⋘ ( *^-^)ρ ⭐ HELLO, {username} ⭐ &(^0^* )⋙"#)
+    format!(r#"⋘ ( *^-^)ρ ⭐ HELLO {username} ⭐ &(^0^* )⋙"#)
 }
