@@ -7,7 +7,7 @@ use std::io::BufReader;
 use std::path::PathBuf;
 use uuid::Uuid;
 
-pub const MAX_PLAYERS_PER_SESSION: usize = 1;
+pub const MAX_PLAYERS_PER_SESSION: usize = 3;
 
 pub enum GameEvent {
     PlayerJoined(String),
